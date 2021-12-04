@@ -1,0 +1,85 @@
+--- /usr/share/initramfs-tools/init-new	2020-04-02 12:31:31.000000000 +0800
++++ /usr/share/initramfs-tools/init-new	2021-12-05 00:46:28.232741013 +0800
+@@ -77,6 +77,18 @@
+ export forcefsck=n
+ export fsckfix=
+ 
++###DO#NOT#DELETE#THIS#MARKER###
++export recovery=
++export KLOOP=
++export KROOT=
++export KLVM=
++export HOSTFSTYPE=
++export KLOOPFSTYPE=
++export SQUSHFS=
++export UPPERDIR=
++export LOWERDIR=
++export WORKDIR=
++export QEMUNBD=
+ 
+ # mdadm needs hostname to be set. This has to be done before the udev rules are called!
+ if [ -f "/etc/hostname" ]; then
+@@ -236,6 +248,36 @@
+ 	fsck.repair=no)
+ 		fsckfix=n
+ 		;;
++	kloop=*)
++		KLOOP=${x#kloop=}
++		;;
++	kroot=*)
++		KROOT=${x#kroot=}
++		;;
++	klvm=*)
++		KLVM=${x#klvm=}
++		;;
++	hostfstype=*)
++		HOSTFSTYPE=${x#hostfstype=}
++		;;
++	kloopfstype=*)
++		KLOOPFSTYPE=${x#kloopfstype=}
++		;;
++	squashfs=*)
++		SQUASHFS=${x#squashfs=}
++		;;
++	upperdir=*)
++		UPPERDIR=${x#upperdir=}
++		;;
++	lowerdir=*)
++		LOWERDIR=${x#lowerdir=}
++		;;
++	workdir=*)
++		WORKDIR=${x#workdir=}
++		;;
++	qemunbd=*)
++		QEMUNBD=${x#qemunbd=}
++		;;
+ 	esac
+ done
+ 
+@@ -250,7 +292,7 @@
+ 	resume=${RESUME:-}
+ fi
+ 
+-mount -t tmpfs -o "nodev,noexec,nosuid,size=${RUNSIZE:-10%},mode=0755" tmpfs /run
++mount -t tmpfs -o "nodev,noexec,size=50%,mode=0755" tmpfs /run
+ mkdir -m 0700 /run/initramfs
+ 
+ if [ -n "$log_output" ]; then
+@@ -364,6 +406,17 @@
+ unset forcefsck
+ unset fsckfix
+ 
++unset KLOOP=
++unset KROOT=
++unset KLVM=
++unset HOSTFSTYPE=
++unset KLOOPFSTYPE=
++unset SQUSHFS=
++unset UPPERDIR=
++unset LOWERDIR=
++unset WORKDIR=
++unset QEMUNBD=
++
+ # Move virtual filesystems over to the real filesystem
+ mount -n -o move /sys ${rootmnt}/sys
+ mount -n -o move /proc ${rootmnt}/proc
