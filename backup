@@ -129,7 +129,7 @@ patchcheck(){
 			;;
 		# You may add other distros here.
 		*)
-			echo "Unsuported distro. Please patch your initramfs-tools manuly before trying to backup."
+			echo "Unsuported distro. Please patch your initramfs-tools manually before trying to backup."
 			exit 1
 			;;
 	esac
@@ -383,49 +383,75 @@ dobackup(){
 
 
 echohelp(){
-	echo "live ubuntu backup $version, copyleft billbear <billbear@gmail.com>
+	echo "Generic Linux Live System Backup, Copyright (c) 2021 blicker
+This program can backup your running Linux system to a compressed, bootable squashfs file.
 
-This program can backup your running ubuntu system to a compressed, bootable squashfs file.
+Usage:
+sudo $mypath -b			Backup current running system to `make_new /tmp/backup-$today`"/"
+sudo $mypath -b /mnt/sdb2		Backup current running system to /mnt/sdb2/
+sudo $mypath -h			View help.
 
-Use:
-sudo /path/to/this/script -b
-
-You can also type
-sudo bash /path/to/this/script -b
-Note that
-sudo sh /path/to/this/script -b
-will not work.
-
-squashfs-tools is required for this program to backup your system.
-You can install them by typing
-sudo apt-get install squashfs-tools
-in a terminal.
-Then you can backup your running ubuntu system by typing
-sudo /path/to/this/script -b
-If you put this script under /usr/local/bin, just type
-sudo `basename $mypath` -b
-and follow the instructions.
 You can specify where to save the backup, files/folders you want to exclude from the backup.
 You don't need to umount external media, windows partitions, or any manually mounted partitions. They will be automatically ignored. Therefore you can save the backup to external media, windows partitions, etc.
 Waring: You must make sure you have enough space to save the backup.
+
+The squashfs file can boot directly using GNU grub:
+
+ menuentry \"GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)\" {
+		set gfxpayload=keep
+		insmod probe
+		insmod squash4
+		set file="`make_new /backup$today.squashfs`"
+		search --no-floppy -f --set=SFSROOT  \$file
+		probe -u --set=SFSUUID \${SFSROOT}
+		loopback loop (\${SFSROOT})/\$file
+		set root=\${SFSROOT}
+		linux (loop)/boot/vmlinuz root=UUID=\${SFSUUID} squashfs=\$file rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+		initrd (loop)/boot/initrd.img
+ }
+
+Or you can manually restore it to a physical HD partion or a disk image file:
+
+ MOUNT YOUR HD PARTITION OR DISK IMAGE FILE (eg. /VirtualBox/linux.vhd ) TO /mnt,
+ cd /mnt
+ sudo unsquashfs `make_new /backup$today.squashfs`
+ sudo mv squashfs-root/* ./
+ sudo rm -rf squashfs-root
+
+EDIT fstab, change the root file system type and root partition UUID:
+
+ sudo vi ./etc/fstab
+
+And boot from it (GNU grub). Here is an example of booting from a VHD file:
+
+ menuentry \"GNU/Linux in VHD IMAGE (Hard disk mode, read and write)\" {
+		set gfxpayload=keep
+		insmod probe
+		set file="/VirtualBox/linux.vhd"
+		search --no-floppy -f --set=SFSROOT  \$file
+		set root=\${SFSROOT}
+		probe -u --set=SFSUUID \${SFSROOT}
+		loopback loop (\${SFSROOT})/\$file
+		linux (loop,msdos1)/boot/vmlinuz root=UUID=\${SFSUUID} kloop=\$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+		initrd (loop,msdos1)/boot/initrd.img
 " | more
 }
 
 echousage(){
 	echo "Usage:
-sudo $mypath -b			Backup current running system to `make_new /tmp/backup-$today`
+sudo $mypath -b			Backup current running system to `make_new /tmp/backup-$today`"/"
 sudo $mypath -b /mnt/sdb2		Backup current running system to /mnt/sdb2/
 sudo $mypath -h			View help."
 }
 
 today=`date +%d.%m.%Y`
-version="V3.0, Mar 6th,2021"
+version="V3.1, Dec 5, 2021"
 OPTION=$1
 BACKUPDIR=$2
 if [ "`id -u`" == 0 ]; then
 	if [ ! -z $OPTION ]; then
 		case $OPTION in
-			-h)
+			-h|--help)
 				echohelp
 				exit 0
 				;;
@@ -443,7 +469,6 @@ if [ "`id -u`" == 0 ]; then
 		exit 1
 	fi
 else
-	echo "Root privileges are required."
-	echousage
+	echo "Root privileges are required. Try \"sudo $0 $@\"".
 	exit 1
 fi
