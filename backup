@@ -16,6 +16,39 @@
 # You should have received a copy of the GNU General Public License along with this program;
 # if not, see <http://www.gnu.org/licenses>.
 
+# Generic Linux Live System Backup
+# Copyright (c) 2021 blicker
+# Backup running installed Linux system or live Linux system it self into a bootable squashfs file.
+# The squashfs file can boot directly using GNU grub:
+#
+# menuentry "GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)" {
+#		set gfxpayload=keep
+#		insmod probe
+#		insmod squash4
+#		set file="/backup03.12.2021.squashfs"
+#		search --no-floppy -f --set=SFSROOT  $file
+#		probe -u --set=SFSUUID ${SFSROOT}
+#		loopback loop (${SFSROOT})/$file
+#		set root=${SFSROOT}
+#		linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+#		initrd (loop)/boot/initrd.img
+# }
+#
+#	Or being extracted into a disk image file (use unsquashfs) and boot from it:
+#
+# menuentry "GNU/Linux in VHD IMAGE (Hard disk mode, read and write)" {
+#		set gfxpayload=keep
+#		insmod probe
+#		set file="/VirtualBox/linux.vhd"
+#		search --no-floppy -f --set=SFSROOT  $file
+#		set root=${SFSROOT}
+#		probe -u --set=SFSUUID ${SFSROOT}
+#		loopback loop (${SFSROOT})/$file
+#		linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+#		initrd (loop,msdos1)/boot/initrd.img
+#	
+#
+
 mypath=$0
 
 make_new(){
@@ -34,8 +67,78 @@ echored(){
 }
 
 
-packagecheck_b(){
-	dpkg -l | grep ^ii | sed 's/[ ][ ]*/ /g' | cut -d " " -f 2 | grep ^squashfs-tools$ > /dev/null || { echored "squashfs-tools is required to run this program. You can install it by typing:\nsudo apt-get install squashfs-tools\nYou may need a working internet connection to do that."; exit 1; }
+packagecheck(){
+	[ $(find /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin -name mksquashfs -type f) ] || { echored "Lack of essential package: squashfs-tools. Please install it."; exit 1; }
+	[ $(find /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin -name update-initramfs -type f) ] || { echored "Lack of essential package: initramfs-tools. Please install it."; exit 1; }
+	[ $(find /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin -name mkinitramfs -type f) ] || { echored "Lack of essential package: initramfs-tools-core. Please install it."; exit 1; }
+}
+
+distrocheck(){
+	DISTRO=""
+	if grep -Eqi "Ubuntu" /etc/issue || grep -Eqi "Ubuntu" /etc/*-release; then
+		DISTRO='Ubuntu'
+	elif grep -Eqi "Debian" /etc/issue || grep -Eqi "Debian" /etc/*-release; then
+		DISTRO='Debian'
+	elif grep -Eqi "Fedora" /etc/issue || grep -Eqi "Fedora" /etc/*-release; then
+		DISTRO='Fedora'
+	# You may add other distros here
+	else
+		DISTRO='Unknown'
+	fi
+}
+
+patchcheck(){
+	# Four files are pathed to make it possible to boot from squashfs file or virtual hard disk image file.
+	# The four files are (eg. Ubuntu & Debian):
+	#			/usr/sbin/mkinitramfs
+	#			/usr/share/initramfs-tools/init
+	#			/usr/share/initramfs-tools/scripts/local
+	#			/usr/share/initramfs-tools/modules
+	# Here we check whether these files were patched or not, 
+	distrocheck
+	case $DISTRO in
+		Ubuntu)
+			LOCALFILE=/usr/share/initramfs-tools/scripts/local
+			LOCALPATCH=/usr/share/backup/local-ubuntu.patch
+			INITFILE=/usr/share/initramfs-tools/init
+			INITPATCH=/usr/share/backup/init-ubuntu.patch
+			MKINITRAMFSFILE=/usr/sbin/mkinitramfs
+			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-ubuntu.patch
+			MODULESFILE=/usr/share/initramfs-tools/modules
+			MODULESPATCH=/usr/share/backup/modules-ubuntu.patch
+			;;
+		Debian)
+			LOCALFILE=/usr/share/initramfs-tools/scripts/local
+			LOCALPATCH=/usr/share/backup/local-debian.patch
+			INITFILE=/usr/share/initramfs-tools/init
+			INITPATCH=/usr/share/backup/init-debian.patch
+			MKINITRAMFSFILE=/usr/sbin/mkinitramfs
+			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-debian.patch
+			MODULESFILE=/usr/share/initramfs-tools/modules
+			MODULESPATCH=/usr/share/backup/modules-debian.patch
+			;;
+		Fedora)
+			LOCALFILE=/usr/share/initramfs-tools/scripts/local
+			LOCALPATCH=/usr/share/backup/local-fedora.patch
+			INITFILE=/usr/share/initramfs-tools/init
+			INITPATCH=/usr/share/backup/init-fedora.patch
+			MKINITRAMFSFILE=/usr/sbin/mkinitramfs
+			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-fedora.patch
+			MODULESFILE=/usr/share/initramfs-tools/modules
+			MODULESPATCH=/usr/share/backup/modules-fedora.patch
+			;;
+		# You may add other distros here.
+		*)
+			echo "Unsuported distro. Please patch your initramfs-tools manuly before trying to backup."
+			exit 1
+			;;
+	esac
+	local PN=0
+	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $MKINITRAMFSFILE) -eq 0 ] && { patch $MKINITRAMFSFILE < $MKINITRAMFSPATCH; [ $? -gt 0 ] && { echored "Patch $MKINITRAMFSFILE failed. Please update $MKINITRAMFSPATCH"; exit 1;} || PN=1; }
+	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $LOCALFILE) -eq 0 ] && { patch $LOCALFILE < $LOCALPATCH; [ $? -gt 0 ] && { echored "Patch $LOCALFILE failed. Please update $LOCALPATCH"; exit 1;} || PN=1; }
+	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $INITFILE) -eq 0 ] && { patch $INITFILE < $INITPATCH; [ $? -gt 0 ] && { echored "Patch $INITFILE failed. Please update $INITPATCH"; exit 1;} || PN=1; }
+	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $MODULESFILE) -eq 0 ] && { patch $MODULESFILE < $MODULESPATCH; [ $? -gt 0 ] && { echored "Patch $MODULESFILE failed. Please update $MODULESPATCH"; exit 1;} || PN=1; }
+	[ $PN -gt 0 ] && update-initramfs -c -k $(uname -r)
 }
 
 rebuildtree(){ # Remounting the linux directories effectively excludes removable media, manually mounted devices, windows partitions, virtual files under /proc, /sys, /dev, the /host contents of a wubi install, etc. If your partition scheme is more complicated than listed below, you must add lines to rebuildtree() and destroytree(), otherwise the backup will be partial.
@@ -115,7 +218,8 @@ dobackup(){
 
 	bindingdir="${bindingdir#/}"
 	backupdir="${backupdir#/}"
-	packagecheck_b
+	packagecheck
+	patchcheck
 	echored "You are about to backup your system. It is recommended that you quit all open applications now. Continue?(y/n)"
 	read yn
 	[ "$yn" != "y" ] && exit 1
@@ -242,7 +346,7 @@ dobackup(){
 	echo usr/share/applications/R.desktop >> $exclude
 	echo usr/share/applications/mpv.desktop >> $exclude
 	echo usr/share/applications/lstopo.desktop >> $exclude
-	echo etc/xdg/mimeapps.list >> $exclude # WPS 创建的绑定文件，自作聪明把自己不能打开的文档类型也关联到自己头上，移除。
+	echo etc/xdg/mimeapps.list >> $exclude # remove silly WPS Office file type binding
 	for i in `swapon -s | grep file | cut -d " " -f 1`; do echo "${i#/}" >> $exclude; done
 	cat $exclude | sort | uniq > $exclude"-uniq"
 	mv $exclude"-uniq" $exclude
