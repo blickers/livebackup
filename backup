@@ -1,0 +1,345 @@
+#!/bin/bash
+
+# Live Ubuntu Backup V3.0, Mar 6th,2021
+# Copyright (C) 2009 billbear <billbear@gmail.com>
+
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License,
+# or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with this program;
+# if not, see <http://www.gnu.org/licenses>.
+
+mypath=$0
+
+make_new(){
+	local newobj="$*"
+	i=0
+	while [ -e $newobj ]; do
+	i=`expr $i + 1`
+	newobj="$*-$i"
+	done
+	echo $newobj
+}
+
+echored(){
+	echo -e "\033[31m$*\033[0m"
+	return 0
+}
+
+
+packagecheck_b(){
+	dpkg -l | grep ^ii | sed 's/[ ][ ]*/ /g' | cut -d " " -f 2 | grep ^squashfs-tools$ > /dev/null || { echored "squashfs-tools is required to run this program. You can install it by typing:\nsudo apt-get install squashfs-tools\nYou may need a working internet connection to do that."; exit 1; }
+}
+
+rebuildtree(){ # Remounting the linux directories effectively excludes removable media, manually mounted devices, windows partitions, virtual files under /proc, /sys, /dev, the /host contents of a wubi install, etc. If your partition scheme is more complicated than listed below, you must add lines to rebuildtree() and destroytree(), otherwise the backup will be partial.
+	mkdir /$1
+	sleep 1
+	mkdir /$1/{boot,cdrom,dev,etc,home,host,media,mnt,opt,proc,root,run,srv,sys,tmp,usr,var}
+	cd /$1
+	ln -s usr/bin bin
+	ln -s usr/sbin sbin
+	ln -s usr/lib lib
+	ln -s usr/lib32 lib32
+	ln -s usr/lib64 lib64
+	ln -s usr/libx32 libx32
+	cd -
+	for i in /home/*; do
+		if [ -d $i ]; then
+			mkdir "/$1/media/${i#/home/}"
+			chmod 750 "/$1/media/${i#/home/}"
+			grep ${i#/home/} /etc/passwd | awk -F':' '{print $3":"$4}' | xargs -i chown {} "/$1/media/${i#/home/}"
+		fi
+	done
+	for i in `cat /etc/fstab | grep media | cut -s -d " " -f 2`; do
+		mkdir -p /$1$i;
+	done
+	chmod ug+rwx,o+rwt /$1/tmp
+	sleep 1
+	mount --bind /boot /$1/boot
+	mount --bind /etc /$1/etc
+	mount --bind /home /$1/home
+	mount --bind /opt /$1/opt
+	mount --bind /root /$1/root
+	mount --bind /usr /$1/usr
+	mount --bind /var /$1/var
+	mount --bind /srv /$1/srv
+}
+
+destroytree(){
+	umount -l /$1/opt
+	umount -l /$1/srv
+	umount -l /$1/var
+	umount -l /$1/root
+	umount -l /$1/usr
+	umount -l /$1/home
+	umount -l /$1/etc
+	umount -l /$1/boot
+	rm -rf /$1
+}
+
+
+dequotepath(){ # If drag n drop from nautilus into terminal, the additional single quotes should be removed first.
+	local tmpath="$*"
+	[ "${tmpath#\'}" != "$tmpath" ] && [ "${tmpath%\'}" != "$tmpath" ] && { tmpath="${tmpath#\'}"; tmpath="${tmpath%\'}"; }
+	echo "$tmpath"
+}
+
+checkbackupdir(){
+	[ "${1#/}" = "$1" ] && { echored "You must specify the absolute path"; exit 1; }
+	[ -d "$*" ] || { echored "$* does not exist, or is not a directory"; exit 1; }
+#	[ `ls -A "$*" | wc -l` = 0 ] || { echored "$* is not empty"; exit 1; }
+}
+
+
+dobackup(){
+	bindingdir=`make_new /tmp/bind`
+	if [ ! -z $BACKUPDIR ]; then
+		if [ -e $BACKUPDIR ]; then
+			BACKUPDIR="`dequotepath "$BACKUPDIR"`"
+			BACKUPDIR=`echo $BACKUPDIR | sed 's/ /\\ /g'`
+			checkbackupdir "$BACKUPDIR"
+			backupdir=$BACKUPDIR
+		else
+			backupdir=`make_new /tmp/backup-$today`
+		fi
+	else
+		backupdir=`make_new /tmp/backup-$today`
+	fi
+
+	bindingdir="${bindingdir#/}"
+	backupdir="${backupdir#/}"
+	packagecheck_b
+	echored "You are about to backup your system. It is recommended that you quit all open applications now. Continue?(y/n)"
+	read yn
+	[ "$yn" != "y" ] && exit 1
+
+	exclude=`make_new /tmp/exclude`
+	echo $backupdir > $exclude
+	echo $bindingdir >> $exclude
+	echo etc/mtab >> $exclude
+	echo etc/blkid.tab >> $exclude
+	echo etc/udev/rules.d/70-persistent-net.rules >> $exclude
+	ls /var/cache/apt/archives/partial 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/cache\/apt\/archives\/partial\/\1/g' >> $exclude
+	ls /var/crash 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/crash\/\1/g' >> $exclude
+	ls /var/lock 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/lock\/\1/g' >> $exclude
+	ls /var/tmp 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/tmp\/\1/g' >> $exclude
+	ls /var/run 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/run\/\1/g' >> $exclude
+	find /var/log/ /var/lock/ /var/backups/ /var/tmp/ /var/crash/ /var/lib/ubiquity/ /var/mail/ /var/spool/ -type f | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var -type f -name "*.deb" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var -type f -name "*.log*" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var -type f -name "*.pid" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var -type f -name "*.bak" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var -type f -name "*.[0-9].gz" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var -type f -name "kdecache*" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var/lib/apt/lists/ /var/lib/app-info/yaml/ -type f | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	for i in /home/* /root; do
+		rm -rf "${i}"/.sudo_as_admin_successful
+		rm -rf "${i}"/"System Volume Information"
+		echo "${i#/}"/System\\ Volume\\ Information >> $exclude
+		echo "${i#/}"/.sudo_as_admin_successful >> $exclude
+		echo "${i#/}"/.gvfs >> $exclude
+		echo "${i#/}"/.cache >> $exclude
+		echo "${i#/}"/.thumbnails >> $exclude
+		echo "${i#/}"/.local/share/gvfs-metadata >> $exclude
+		echo "${i#/}"/.local/gvfs-metadata >> $exclude
+		echo "${i#/}"/.local/share/Trash >> $exclude
+		echo "${i#/}"/.bash_history >> $exclude
+		echo "${i#/}"/.Rhistory >> $exclude
+		echo "${i#/}"/.gvfs >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/Cache >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/Session\\ Storage >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/GPUCache >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/Local\\ Storage >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/crash\\ logs >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/Crash\\ Reports >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/Code\\ Cache >> $exclude
+		echo "${i#/}"/.config/baidunetdisk/blob_storage >> $exclude
+		echo "${i#/}"/.config/google-chrome/Crash\\ Reports >> $exclude
+		echo "${i#/}"/.config/google-chrome/GrShaderCache >> $exclude
+		echo "${i#/}"/.config/google-chrome/Default/History >> $exclude
+		echo "${i#/}"/.config/google-chrome/Default/Media\\ History >> $exclude
+		echo "${i#/}"/R >> $exclude
+		echo "${i#/}"/.local/share/Kingsoft/daemon >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/c:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/d:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/e:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/f:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/g:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/h:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/i:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/j:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/k:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/l:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/m:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/n:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/o:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/p:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/q:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/r:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/s:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/t:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/u:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/v:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/w:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/x:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/y:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/z:: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/f: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/g: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/h: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/i: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/j: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/k: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/l: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/m: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/n: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/o: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/p: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/q: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/r: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/s: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/t: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/u: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/v: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/w: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/x: >> $exclude
+		echo "${i#/}"/.cxoffice/Common/dosdevices/y: >> $exclude
+		echo "${i#/}"/.ssh >> $exclude
+		ls $i/Downloads/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Downloads/"{} >> $exclude
+		ls $i/Documents/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Documents/"{} >> $exclude
+		ls $i/Desktop/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Desktop/"{} >> $exclude
+		ls $i/Movies/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Movies/"{} >> $exclude
+		ls $i/Music/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Music/"{} >> $exclude
+		ls $i/Pictures/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Pictures/"{} >> $exclude
+		ls $i/Public/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Public/"{} >> $exclude
+	done
+	find /home /root -type f -name "*-journal" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /home /root -type f -name "*.bak" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /home /root -type f -name "*.old" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /home /root -type f -name "*.log" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /home /root -type s | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	echo var/lib/dbus/machine-id >> $exclude
+	echo lost+found >> $exclude
+	echo boot/lost+found >> $exclude
+	echo home/lost+found >> $exclude
+	echo tmp/lost+found >> $exclude
+	echo usr/lost+found >> $exclude
+	echo var/lost+found >> $exclude
+	echo srv/lost+found >> $exclude
+	echo opt/lost+found >> $exclude
+	echo usr/local/lost+found >> $exclude
+	echo usr/share/applications/wps-office-prometheus.desktop >> $exclude
+	echo usr/share/applications/htop.desktop >> $exclude
+	echo usr/share/applications/lftp.desktop >> $exclude
+	echo usr/share/applications/display-im6.q16.desktop >> $exclude
+	echo usr/share/applications/R.desktop >> $exclude
+	echo usr/share/applications/mpv.desktop >> $exclude
+	echo usr/share/applications/lstopo.desktop >> $exclude
+	echo etc/xdg/mimeapps.list >> $exclude # WPS 创建的绑定文件，自作聪明把自己不能打开的文档类型也关联到自己头上，移除。
+	for i in `swapon -s | grep file | cut -d " " -f 1`; do echo "${i#/}" >> $exclude; done
+	cat $exclude | sort | uniq > $exclude"-uniq"
+	mv $exclude"-uniq" $exclude
+
+	echored "(For advanced users only) Specify other files/folders you want to exclude from the backup, one file/folder per line. You can drag and drop from Nautilus. End with an empty line.\nNote that the program has automatically excluded all removable media, windows partitions, manually mounted devices, files under /proc, /sys, /tmp, the /host contents of a wubi install, etc. So in most cases you can just hit enter now.\nIf you exclude important system files/folders, the backup will fail to restore."
+	read ex
+	while [ "$ex" != "" ]; do
+	ex=`dequotepath "$ex"`
+	[ "${ex#/}" = "$ex" ] && { echo "You must specify the absolute path"; read ex; continue; }
+	[ -e "$ex" ] || { echo "$ex does not exist"; read ex; continue; }
+	ex="${ex#/}"
+	echo $ex >> $exclude
+	read ex
+	done
+
+	rebuildtree $bindingdir
+
+
+	echored "Start to backup?(y/n)"
+	read yn
+	[ "$yn" != "y" ] && { destroytree $bindingdir; rm $exclude; exit 1; }
+	stime=`date`
+	mkdir -p "/$backupdir"
+	SQUASHFSOPTS="-no-recovery -always-use-fragments -b 1M -noappend"
+	mksquashfs /$bindingdir "/$backupdir/backup$today.squashfs" $SQUASHFSOPTS -ef $exclude
+	destroytree $bindingdir
+	echored "Your backup is ready in /$backupdir :)"
+	echored " started at: $stime\nfinished at: `date`"
+	tput bel
+	rm -rf $exclude
+}
+
+
+
+
+echohelp(){
+	echo "live ubuntu backup $version, copyleft billbear <billbear@gmail.com>
+
+This program can backup your running ubuntu system to a compressed, bootable squashfs file.
+
+Use:
+sudo /path/to/this/script -b
+
+You can also type
+sudo bash /path/to/this/script -b
+Note that
+sudo sh /path/to/this/script -b
+will not work.
+
+squashfs-tools is required for this program to backup your system.
+You can install them by typing
+sudo apt-get install squashfs-tools
+in a terminal.
+Then you can backup your running ubuntu system by typing
+sudo /path/to/this/script -b
+If you put this script under /usr/local/bin, just type
+sudo `basename $mypath` -b
+and follow the instructions.
+You can specify where to save the backup, files/folders you want to exclude from the backup.
+You don't need to umount external media, windows partitions, or any manually mounted partitions. They will be automatically ignored. Therefore you can save the backup to external media, windows partitions, etc.
+Waring: You must make sure you have enough space to save the backup.
+" | more
+}
+
+echousage(){
+	echo "Usage:
+sudo $mypath -b			Backup current running system to `make_new /tmp/backup-$today`
+sudo $mypath -b /mnt/sdb2		Backup current running system to /mnt/sdb2/
+sudo $mypath -h			View help."
+}
+
+today=`date +%d.%m.%Y`
+version="V3.0, Mar 6th,2021"
+OPTION=$1
+BACKUPDIR=$2
+if [ "`id -u`" == 0 ]; then
+	if [ ! -z $OPTION ]; then
+		case $OPTION in
+			-h)
+				echohelp
+				exit 0
+				;;
+			-b)
+				dobackup
+				exit 0
+				;;
+			*)
+				echousage
+				exit 1
+				;;
+		esac
+	else
+		echousage
+		exit 1
+	fi
+else
+	echo "Root privileges are required."
+	echousage
+	exit 1
+fi
