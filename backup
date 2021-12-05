@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License along with this program;
 # if not, see <http://www.gnu.org/licenses>.
 
-# Generic Linux Live System Backup
+# Generic Debian/Ubuntu Linux Live System Backup
 # Copyright (c) 2021 blicker
 # Backup running installed Linux system or live Linux system it self into a bootable squashfs file.
 # The squashfs file can boot directly using GNU grub:
@@ -79,8 +79,6 @@ distrocheck(){
 		DISTRO='Ubuntu'
 	elif grep -Eqi "Debian" /etc/issue || grep -Eqi "Debian" /etc/*-release; then
 		DISTRO='Debian'
-	elif grep -Eqi "Fedora" /etc/issue || grep -Eqi "Fedora" /etc/*-release; then
-		DISTRO='Fedora'
 	# You may add other distros here
 	else
 		DISTRO='Unknown'
@@ -116,16 +114,6 @@ patchcheck(){
 			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-debian.patch
 			MODULESFILE=/usr/share/initramfs-tools/modules
 			MODULESPATCH=/usr/share/backup/modules-debian.patch
-			;;
-		Fedora)
-			LOCALFILE=/usr/share/initramfs-tools/scripts/local
-			LOCALPATCH=/usr/share/backup/local-fedora.patch
-			INITFILE=/usr/share/initramfs-tools/init
-			INITPATCH=/usr/share/backup/init-fedora.patch
-			MKINITRAMFSFILE=/usr/sbin/mkinitramfs
-			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-fedora.patch
-			MODULESFILE=/usr/share/initramfs-tools/modules
-			MODULESPATCH=/usr/share/backup/modules-fedora.patch
 			;;
 		# You may add other distros here.
 		*)
@@ -383,7 +371,7 @@ dobackup(){
 
 
 echohelp(){
-	echo "Generic Linux Live System Backup, Copyright (c) 2021 blicker
+	echo "Generic Debian/Ubuntu Linux Live System Backup, Copyright (c) 2021 blicker
 This program can backup your running Linux system to a compressed, bootable squashfs file.
 
 Usage:
