@@ -52,3 +52,6 @@ And boot from it. Here is an GNU grub example of booting from a VHD file:
  }
 ```   
  
+# Thanks to
+* "Live Ubuntu Backup" script originaly written by billbear@gmail.com
+* "kloop" scripts written by niumao
