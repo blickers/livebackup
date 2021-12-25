@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# Live Ubuntu Backup V3.0, Mar 6th,2021
+# Live Ubuntu Backup
 # Copyright (C) 2009 billbear <billbear@gmail.com>
+
+# Generic Debian/Ubuntu Linux Live System Backup
+# Copyright (c) 2021 blicker
 
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by
@@ -16,8 +19,6 @@
 # You should have received a copy of the GNU General Public License along with this program;
 # if not, see <http://www.gnu.org/licenses>.
 
-# Generic Debian/Ubuntu Linux Live System Backup
-# Copyright (c) 2021 blicker
 # Backup running installed Linux system or live Linux system it self into a bootable squashfs file.
 # The squashfs file can boot directly using GNU grub:
 #
@@ -223,14 +224,14 @@ dobackup(){
 	ls /var/lock 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/lock\/\1/g' >> $exclude
 	ls /var/tmp 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/tmp\/\1/g' >> $exclude
 	ls /var/run 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/run\/\1/g' >> $exclude
-	find /var/log/ /var/lock/ /var/backups/ /var/tmp/ /var/crash/ /var/lib/ubiquity/ /var/mail/ /var/spool/ -type f | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var/log/ /var/lock/ /var/backups/ /var/tmp/ /var/crash/ /var/lib/ubiquity/ /var/mail/ /var/spool/ -type f 2>/dev/null | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	find /var -type f -name "*.deb" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	find /var -type f -name "*.log*" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	find /var -type f -name "*.pid" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	find /var -type f -name "*.bak" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	find /var -type f -name "*.[0-9].gz" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	find /var -type f -name "kdecache*" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var/lib/apt/lists/ /var/lib/app-info/yaml/ -type f | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var/lib/apt/lists/ /var/lib/app-info/yaml/ -type f 2>/dev/null | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
 	for i in /home/* /root; do
 		rm -rf "${i}"/.sudo_as_admin_successful
 		rm -rf "${i}"/"System Volume Information"
@@ -243,6 +244,7 @@ dobackup(){
 		echo "${i#/}"/.local/gvfs-metadata >> $exclude
 		echo "${i#/}"/.local/share/Trash >> $exclude
 		echo "${i#/}"/.bash_history >> $exclude
+		echo "${i#/}"/.bash_logout >> $exclude
 		echo "${i#/}"/.Rhistory >> $exclude
 		echo "${i#/}"/.gvfs >> $exclude
 		echo "${i#/}"/.config/baidunetdisk/Cache >> $exclude
@@ -303,6 +305,10 @@ dobackup(){
 		echo "${i#/}"/.cxoffice/Common/dosdevices/w: >> $exclude
 		echo "${i#/}"/.cxoffice/Common/dosdevices/x: >> $exclude
 		echo "${i#/}"/.cxoffice/Common/dosdevices/y: >> $exclude
+		echo "${i#/}"/.vboxclient-clipboard.pid >> $exclude
+		echo "${i#/}"/.vboxclient-display-svga-x11.pid >> $exclude
+		echo "${i#/}"/.vboxclient-draganddrop.pid >> $exclude
+		echo "${i#/}"/.vboxclient-seamless.pid >> $exclude
 		echo "${i#/}"/.ssh >> $exclude
 		ls $i/Downloads/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Downloads/"{} >> $exclude
 		ls $i/Documents/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Documents/"{} >> $exclude
@@ -433,7 +439,7 @@ sudo $mypath -h			View help."
 }
 
 today=`date +%d.%m.%Y`
-version="V3.1, Dec 5, 2021"
+version="V3.2, Dec 25, 2021"
 OPTION=$1
 BACKUPDIR=$2
 if [ "`id -u`" == 0 ]; then
