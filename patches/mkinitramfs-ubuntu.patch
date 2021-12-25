@@ -1,6 +1,6 @@
---- /usr/sbin/mkinitramfs	2020-04-09 15:35:46.000000000 +0800
-+++ /usr/sbin/mkinitramfs-new	2021-12-05 00:56:35.480217417 +0800
-@@ -366,6 +366,21 @@
+--- /usr/sbin/mkinitramfs.orig	2020-04-09 15:35:46.000000000 +0800
++++ /usr/sbin/mkinitramfs	2021-12-25 19:02:21.211611548 +0800
+@@ -366,6 +366,20 @@
  # module-init-tools
  copy_exec /sbin/modprobe /sbin
  copy_exec /sbin/rmmod /sbin
@@ -17,7 +17,6 @@
 +copy_exec /usr/bin/qemu-nbd /bin
 +touch ${DESTDIR}/etc/initrd-release
 +touch ${DESTDIR}/version
-+###DO#NOT#DELETE#THIS#MARKER###
 +
  mkdir -p "${DESTDIR}/etc/modprobe.d" "${DESTDIR}/lib/modprobe.d"
  for file in /etc/modprobe.d/*.conf /lib/modprobe.d/*.conf ; do
