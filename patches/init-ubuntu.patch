@@ -1,11 +1,12 @@
---- /usr/share/initramfs-tools/init-new	2020-04-02 12:31:31.000000000 +0800
-+++ /usr/share/initramfs-tools/init-new	2021-12-05 00:46:28.232741013 +0800
-@@ -77,6 +77,18 @@
+--- /usr/share/initramfs-tools/init.orig	2020-04-02 12:31:31.000000000 +0800
++++ /usr/share/initramfs-tools/init	2021-12-25 19:01:22.282091910 +0800
+@@ -76,7 +76,18 @@
+ export fastboot=n
  export forcefsck=n
  export fsckfix=
- 
-+###DO#NOT#DELETE#THIS#MARKER###
+-
 +export recovery=
++###DO#NOT#DELETE#THIS#MARKER###
 +export KLOOP=
 +export KROOT=
 +export KLVM=
@@ -19,7 +20,7 @@
  
  # mdadm needs hostname to be set. This has to be done before the udev rules are called!
  if [ -f "/etc/hostname" ]; then
-@@ -236,6 +248,36 @@
+@@ -236,6 +247,36 @@
  	fsck.repair=no)
  		fsckfix=n
  		;;
@@ -56,7 +57,7 @@
  	esac
  done
  
-@@ -250,7 +292,7 @@
+@@ -250,7 +291,7 @@
  	resume=${RESUME:-}
  fi
  
@@ -65,7 +66,7 @@
  mkdir -m 0700 /run/initramfs
  
  if [ -n "$log_output" ]; then
-@@ -364,6 +406,17 @@
+@@ -364,6 +405,17 @@
  unset forcefsck
  unset fsckfix
  
