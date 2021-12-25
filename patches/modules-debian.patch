@@ -1,0 +1,12 @@
+--- /usr/share/initramfs-tools/modules.orig	2021-01-15 02:04:11.000000000 +0800
++++ /usr/share/initramfs-tools/modules	2021-12-25 17:36:50.579793278 +0800
+@@ -12,3 +12,9 @@
+ #
+ # raid1
+ # sd_mod
++###DO#NOT#DELETE#THIS#MARKER###
++loop
++fuse
++dm-mod
++overlay
++nbd

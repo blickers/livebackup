@@ -1,0 +1,454 @@
+--- /usr/share/initramfs-tools/scripts/local.orig	2021-01-15 02:04:11.000000000 +0800
++++ /usr/share/initramfs-tools/scripts/local	2021-12-25 17:35:14.957482273 +0800
+@@ -158,6 +158,9 @@
+ 	fi
+ 
+ 	local_premount
++	
++###DO#NOT#DELETE#THIS#MARKER###
++if [ -z "$KLOOP" ] && [ -z "$SQUASHFS" ] && [ -z "$UPPERDIR" ] && [ -z "$QEMUNBD" ] ; then
+ 
+ 	if [ "${readonly?}" = "y" ]; then
+ 		roflag=-r
+@@ -169,9 +172,439 @@
+ 
+ 	# Mount root
+ 	# shellcheck disable=SC2086
+-	if ! mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"; then
+-		panic "Failed to mount ${ROOT} as root file system."
++	mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
++	mountroot_status="$?"
++	if [ "$LOOP" ]; then
++		if [ "$mountroot_status" != 0 ]; then
++			if [ "${FSTYPE}" = ntfs ] || [ "${FSTYPE}" = vfat ]
++			then
++				panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++			fi
++		fi
++
++		mkdir -p /host
++		mount -o move "$rootmnt" /host
++
++		while [ ! -e "/host/${LOOP#/}" ]; do
++			panic "ALERT!  /host/${LOOP#/} does not exist.  Dropping to a shell!"
++		done
++
++		# Get the loop filesystem type if not set
++		FSTYPE="$LOOPFSTYPE"
++		if [ -z "$FSTYPE" ] || [ "$FSTYPE" = "unknown" ]; then
++			FSTYPE=$(/sbin/blkid -s TYPE -o value "/host/${LOOP#/}")
++			[ -z "$FSTYPE" ] && FSTYPE="unknown"
++		fi
++
++		if [ "$readonly" = y ]; then
++			roflag=-r
++		else
++			roflag=-w
++		fi
++
++		# FIXME This has no error checking
++		modprobe loop
++
++		# FIXME This has no error checking
++		# shellcheck disable=SC2086
++		mount ${roflag} -o loop -t ${FSTYPE} ${LOOPFLAGS} "/host/${LOOP#/}" "${rootmnt?}"
++
++		if [ -d "$rootmnt/host" ]; then
++			mount -o move /host "$rootmnt/host"
++		fi
+ 	fi
++fi
++
++	#########################################################
++	#                       kloop by niumao		#
++	#########################################################
++
++if [ -n "$KLOOP" ]; then
++
++	### reset the value of the root variable 
++	HOSTDEV="${ROOT}"
++	NEWROOT="${rootmnt}"
++	[ -n "$KROOT" ] && ROOT="$KROOT"
++	[ -n "$KROOT" ] || ROOT="/dev/loop0"
++	export ROOT
++	realroot="$ROOT"
++
++	###  auto probe the fs-type of the partition in which vhd-file live and mount it  /host 
++	mkdir -p /host
++	if [ -e ${NEWROOT}${KLOOP} ]; then
++		mount --move $NEWROOT /host
++	else	
++		if [ -z "$HOSTFSTYPE" ]; then
++			HOSTFSTYPE="$(blkid -s TYPE -o value "${HOSTDEV}")"
++			#[ -z "$HOSTFSTYPE"  -o "${HOSTFSTYPE}" = "ntfs" ] && HOSTFSTYPE="ntfs-3g"
++		fi
++		case ${HOSTFSTYPE} in
++			ntfs)
++				if [ $(grep "ntfs3" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs3.ko") ]; then
++					modprobe ntfs3 >/dev/null 2>&1
++					mount -t ntfs3 -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
++					modprobe ntfs >/dev/null 2>&1
++					mount -t ntfs -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/ntfs-3g ]; then
++					ntfs-3g -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			exfat)
++				if [ $(grep "exfat" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "exfat.ko") ]; then
++					modprobe exfat >/dev/null 2>&1
++					mount -t exfat -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/mount.exfat-fuse ]; then
++					mount.exfat-fuse ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			*)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				mount -t ${HOSTFSTYPE} -o rw ${HOSTDEV} /host
++				;;
++		esac
++	fi
++	
++	### mount the vhd-file on a loop-device 
++	if [ "${KLOOP#/}" !=  "${KLOOP}" ]; then
++		modprobe  loop  
++		kpartx -av /host${KLOOP}
++		[ -e "$realroot" ] || sleep 3
++	fi
++
++	### probe lvm on vhd-file
++	if [ -n "$KLVM" ];  then
++		modprobe dm-mod
++		vgscan
++		vgchange  -ay  ${KLVM}
++		[ -e "$realroot" ] ||  sleep 3
++	fi 
++
++	if [ "${readonly}" = "y" ] ; then
++		roflag="-r"
++	else
++		roflag="-w"
++	fi
++	 
++	### mount the realroot / in vhd-file on $NEWROOT 
++	if [ -z "${KLOOPFSTYPE}" ]; then
++		KLOOPFSTYPE="$(blkid -s TYPE -o value "$realroot")"
++		[ -z "${KLOOPFSTYPE}" ] && KLOOPFSTYPE="ext4"
++	fi
++	[ -e "$realroot" ] || sleep 3
++	mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
++	
++	### mount /host in initrd to /host of the realrootfs
++	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
++	mount --move /host   ${NEWROOT}/host
++fi
++
++if  [ -n "$QEMUNBD" ] ; then
++
++	### reset the value of the root variable 
++	HOSTDEV="${ROOT}"
++	NEWROOT="${rootmnt}"
++	[ -n "$KROOT" ] && ROOT="$KROOT"
++	[ -n "$KROOT" ] || ROOT="/dev/loop0"
++	export ROOT
++	realroot="$ROOT"
++
++	###  auto probe the fs-type of the partition in which vhd-file live and mount it  /host 
++	mkdir -p /host
++	if [ -e $NEWROOT$QEMUNBD ]; then
++		mount --move $NEWROOT /host
++	else	
++		if [ -z "$HOSTFSTYPE" ]; then
++			HOSTFSTYPE="$(blkid -s TYPE -o value "${HOSTDEV}")"
++		fi
++		case ${HOSTFSTYPE} in
++			ntfs)
++				if [ $(grep "ntfs3" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs3.ko") ]; then
++					modprobe ntfs3 >/dev/null 2>&1
++					mount -t ntfs3 -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
++					modprobe ntfs >/dev/null 2>&1
++					mount -t ntfs -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/ntfs-3g ]; then
++					ntfs-3g -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			exfat)
++				if [ $(grep "exfat" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "exfat.ko") ]; then
++					modprobe exfat >/dev/null 2>&1
++					mount -t exfat -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/mount.exfat-fuse ]; then
++					mount.exfat-fuse ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			*)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				mount -t ${HOSTFSTYPE} -o rw ${HOSTDEV} /host
++				;;
++		esac
++	fi
++	
++	### mount the vhd-file on a loop-device 
++	if [ "${QEMUNBD#/}" !=  "${QEMUNBD}" ]; then       	
++		modprobe  nbd  
++		modprobe  loop
++		[ -e  /dev/nbd0 ] || sleep 3 
++		qemu-nbd  -c /dev/nbd0  /host${QEMUNBD}
++		kpartx -av /dev/nbd0
++		[ -e "$realroot" ] || sleep 3
++	fi
++
++	if [ "${readonly}" = "y" ] ; then
++		roflag="-r"
++	else
++		roflag="-w"
++	fi
++	 
++	### mount the realroot / in vhd-file on $NEWROOT 
++	if [ -z "${KLOOPFSTYPE}" ]; then
++		KLOOPFSTYPE="$(blkid -s TYPE -o value "$realroot")"
++		[ -z "${KLOOPFSTYPE}" ] && KLOOPFSTYPE="ext4"
++	fi
++	[ -e "$realroot" ] || sleep 3
++	mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
++	
++	### mount /host in initrd to /host of the realrootfs
++	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
++	mount --move /host   ${NEWROOT}/host
++fi
++
++if [ -n "$UPPERDIR" ] && [ -n "$WORKDIR" ];  then
++
++	### reset the value of the root variable 
++	HOSTDEV="${ROOT}"
++	NEWROOT="${rootmnt}"
++	
++	###  auto probe the fs-type of the partition in which vhd-file live and mount it  /host 
++	mkdir -p /host
++	if [ -e ${NEWROOT}${UPPERDIR} ]; then
++		mount --move $NEWROOT /host
++	else	
++		if [ -z "$HOSTFSTYPE" ]; then
++			HOSTFSTYPE="$(blkid -s TYPE -o value "${HOSTDEV}")"
++		fi
++		case ${HOSTFSTYPE} in
++			ntfs)
++				if [ $(grep "ntfs3" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs3.ko") ]; then
++					modprobe ntfs3 >/dev/null 2>&1
++					mount -t ntfs3 -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
++					modprobe ntfs >/dev/null 2>&1
++					mount -t ntfs -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/ntfs-3g ]; then
++					ntfs-3g -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			exfat)
++				if [ $(grep "exfat" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "exfat.ko") ]; then
++					modprobe exfat >/dev/null 2>&1
++					mount -t exfat -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/mount.exfat-fuse ]; then
++					mount.exfat-fuse ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			*)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				mount -t ${HOSTFSTYPE} -o rw ${HOSTDEV} /host
++				;;
++		esac
++	fi
++		
++	###try to boot from dir
++	modprobe overlay
++	mkdir  /run/lowerdir 
++	mount  -t overlay overlay -o lowerdir=/run/lowerdir,upperdir=/host$UPPERDIR,workdir=/host$WORKDIR  $NEWROOT
++
++	### mount /host in initrd to /host of the realrootfs
++	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
++	mount --move /host   ${NEWROOT}/host
++fi	
++
++if [ -n "$SQUASHFS" ];  then
++
++	### reset the value of the root variable 
++	HOSTDEV="${ROOT}"
++	NEWROOT="${rootmnt}"
++	
++	###  auto probe the fs-type of the partition in which vhd-file live and mount it  /host 
++	mkdir -p /host
++	if [ -e ${NEWROOT}${SQUASHFS} ]; then
++		mount --move $NEWROOT /host
++	else	
++		if [ -z "$HOSTFSTYPE" ]; then
++			HOSTFSTYPE="$(blkid -s TYPE -o value "${HOSTDEV}")"
++		fi
++		case ${HOSTFSTYPE} in
++			ntfs)
++				if [ $(grep "ntfs3" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs3.ko") ]; then
++					modprobe ntfs3 >/dev/null 2>&1
++					mount -t ntfs3 -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
++					modprobe ntfs >/dev/null 2>&1
++					mount -t ntfs -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/ntfs-3g ]; then
++					ntfs-3g -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			exfat)
++				if [ $(grep "exfat" /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "exfat.ko") ]; then
++					modprobe exfat >/dev/null 2>&1
++					mount -t exfat -o rw ${HOSTDEV} /host
++					mountroot_status="$?"
++				elif [ -a /usr/bin/mount.exfat-fuse ]; then
++					mount.exfat-fuse ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.  To fix this,
++simply reboot into Windows, let it fully start, log in, run 'chkdsk /r', then
++gracefully shut down and reboot back into Windows. After this you should be
++able to reboot again and resume the installation.
++(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			*)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				mount -t ${HOSTFSTYPE} -o rw ${HOSTDEV} /host
++				;;
++		esac
++	fi
++	
++	###try to boot from squashfs
++	modprobe overlay
++	mkdir  -p /run/lowerdir /run/upperdir  /run/workdir
++	mount  /host$SQUASHFS  /run/lowerdir
++	mount  -t overlay overlay -o lowerdir=/run/lowerdir,upperdir=/run/upperdir,workdir=/run/workdir    $NEWROOT
++
++	### mount /host in initrd to /host of the realrootfs
++	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
++	mount --move /host   ${NEWROOT}/host
++fi	
++
++	#########################################################
++	#                       kloop by niumao		#
++	#########################################################
++
+ }
+ 
+ local_mount_fs()
