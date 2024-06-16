@@ -1,0 +1,83 @@
+--- init.orig	2022-01-11 02:53:39.202061000 +0800
++++ init	2022-01-09 05:14:53.622246700 +0800
+@@ -75,6 +75,17 @@
+ export LIVE_BOOT_CMDLINE=
+ export origin_root=
+ export origin_rootmnt=
++###DO#NOT#DELETE#THIS#MARKER###
++export KLOOP=
++export KROOT=
++export KLVM=
++export HOSTFSTYPE=
++export KLOOPFSTYPE=
++export SQUSHFS=
++export UPPERDIR=
++export LOWERDIR=
++export WORKDIR=
++export QEMUNBD=
+ 
+ # mdadm needs hostname to be set. This has to be done before the udev rules are called!
+ if [ -f "/etc/hostname" ]; then
+@@ -240,6 +251,36 @@
+ 	fsck.repair=no)
+ 		fsckfix=n
+ 		;;
++	kloop=*)
++		KLOOP=${x#kloop=}
++		;;
++	kroot=*)
++		KROOT=${x#kroot=}
++		;;
++	klvm=*)
++		KLVM=${x#klvm=}
++		;;
++	hostfstype=*)
++		HOSTFSTYPE=${x#hostfstype=}
++		;;
++	kloopfstype=*)
++		KLOOPFSTYPE=${x#kloopfstype=}
++		;;
++	squashfs=*)
++		SQUASHFS=${x#squashfs=}
++		;;
++	upperdir=*)
++		UPPERDIR=${x#upperdir=}
++		;;
++	lowerdir=*)
++		LOWERDIR=${x#lowerdir=}
++		;;
++	workdir=*)
++		WORKDIR=${x#workdir=}
++		;;
++	qemunbd=*)
++		QEMUNBD=${x#qemunbd=}
++		;;
+ 	esac
+ done
+ 
+@@ -254,7 +295,7 @@
+ 	resume=${RESUME:-}
+ fi
+ 
+-mount -t tmpfs -o "nodev,noexec,nosuid,size=${RUNSIZE:-10%},mode=0755" tmpfs /run
++mount -t tmpfs -o "nodev,noexec,size=${RUNSIZE:-10%},mode=0755" tmpfs /run
+ mkdir -m 0700 /run/initramfs
+ 
+ 
+@@ -443,6 +484,16 @@
+ unset fsckfix
+ unset IP6
+ unset VLAN
++unset KLOOP=
++unset KROOT=
++unset KLVM=
++unset HOSTFSTYPE=
++unset KLOOPFSTYPE=
++unset SQUSHFS=
++unset UPPERDIR=
++unset LOWERDIR=
++unset WORKDIR=
++unset QEMUNBD=
+ 
+ # Move virtual filesystems over to the real filesystem
+ mount -n -o move /sys ${rootmnt}/sys

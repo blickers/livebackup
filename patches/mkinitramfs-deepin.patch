@@ -1,0 +1,41 @@
+--- mkinitramfs.orig	2022-01-11 02:52:48.436634900 +0800
++++ mkinitramfs	2022-01-09 05:10:48.533355700 +0800
+@@ -244,6 +244,7 @@
+ export MODULES
+ export BUSYBOX
+ export RESUME
++export FSTYPE
+ 
+ # Private, used by 'catenate_cpiogz'.
+ export __TMPCPIOGZ
+@@ -300,6 +301,9 @@
+ # Resolve hidden dependencies
+ hidden_dep_add_modules
+ 
++# Add firmware for built-in code
++add_builtin_firmware
++
+ # First file executed by linux
+ cp -p /usr/share/initramfs-tools/init "${DESTDIR}/init"
+ 
+@@ -345,6 +349,20 @@
+ # module-init-tools
+ copy_exec /sbin/modprobe /sbin
+ copy_exec /sbin/rmmod /sbin
++
++###DO#NOT#DELETE#THIS#MARKER###
++# util-linux
++copy_exec /sbin/blkid /sbin
++copy_exec /sbin/losetup /sbin
++copy_exec /sbin/kpartx /sbin
++copy_exec /bin/ntfs-3g /bin
++copy_exec /sbin/mount.exfat-fuse /bin
++copy_exec /sbin/vgscan /sbin
++copy_exec /sbin/shutdown /shutdown
++copy_exec /usr/bin/qemu-nbd /bin
++touch ${DESTDIR}/etc/initrd-release
++touch ${DESTDIR}/version
++
+ mkdir -p "${DESTDIR}/etc/modprobe.d" "${DESTDIR}/lib/modprobe.d"
+ for file in /etc/modprobe.d/*.conf /lib/modprobe.d/*.conf ; do
+ 	if test -e "$file" || test -L "$file" ; then

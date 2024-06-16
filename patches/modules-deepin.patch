@@ -1,0 +1,12 @@
+--- modules.orig	2022-01-11 02:53:18.621471100 +0800
++++ modules	2022-01-09 05:15:56.670880500 +0800
+@@ -12,3 +12,9 @@
+ #
+ # raid1
+ # sd_mod
++###DO#NOT#DELETE#THIS#MARKER###
++loop
++fuse
++dm-mod
++overlay
++nbd
