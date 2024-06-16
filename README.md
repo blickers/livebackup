@@ -1,12 +1,9 @@
 # livebackup
 Simply create a bootable squashfs live systems from your running Linux
 
-This is a bash script aiming to create a bootable squashfs file from an installed Linux system
-or the live system it self. It's modified from the "Live Ubuntu Backup" script originaly
-written by billbear@gmail.com. I simplified the code, focusing on only live system backup, and
-make it working for not only Ubuntu, but also for any other debian based Linux distribution.
+This is a bash script designed to create a bootable squashfs file from either an installed Linux system or the live system itself. It's an adaptation of the "Live Ubuntu Backup" script originally authored by billbear@gmail.com. I've simplified its code, concentrating solely on live system backups and ensuring it functions for more than just Ubuntu; it supports any Debian-based Linux distribution.
 
-The squashfs backup file can boot directly using GNU grub:
+The squashfs backup file can be booted directly using GNU grub:
 
 ```
  menuentry "GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)" {
@@ -18,11 +15,11 @@ The squashfs backup file can boot directly using GNU grub:
 	probe -u --set=SFSUUID ${SFSROOT}
 	loopback loop (${SFSROOT})/$file
 	set root=${SFSROOT}
-	linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+	linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
 	initrd (loop)/boot/initrd.img
  }
 ```
-Or you can manually restore it to a physical HD partion or a disk image file:
+Alternatively, you can manually restore the squashfs backup to a physical hard drive partition or a disk image file:
 
  MOUNT YOUR HD PARTITION OR DISK IMAGE FILE (eg. /VirtualBox/linux.vhd ) TO /mnt,
 ```
@@ -36,7 +33,8 @@ EDIT fstab, change the root file system type and root partition UUID:
 ```
  sudo vi ./etc/fstab
 ```
-And boot from it. Here is an GNU grub example of booting from a VHD file:
+And then boot from it.
+Here is an example of a grub.cfg configuration for booting from a VHD file:
 
 ```
  menuentry "GNU/Linux in VHD IMAGE (Hard disk mode, read and write)" {
@@ -47,7 +45,7 @@ And boot from it. Here is an GNU grub example of booting from a VHD file:
 	set root=${SFSROOT}
 	probe -u --set=SFSUUID ${SFSROOT}
 	loopback loop (${SFSROOT})/$file
-	linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+	linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
 	initrd (loop,msdos1)/boot/initrd.img
  }
 ```   
