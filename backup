@@ -4,7 +4,7 @@
 # Copyright (C) 2009 billbear <billbear@gmail.com>
 
 # Generic Debian/Ubuntu Linux Live System Backup
-# Copyright (c) 2021 blicker
+# Copyright (c) 2024 blicker
 
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by
@@ -20,7 +20,8 @@
 # if not, see <http://www.gnu.org/licenses>.
 
 # Backup running installed Linux system or live Linux system it self into a bootable squashfs file.
-# The squashfs file can boot directly using GNU grub:
+#
+# Example of GNU GRUB config setting (grub.cfg) to boot squashfs backup file located in the root directory of any partition:
 #
 # menuentry "GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)" {
 #		set gfxpayload=keep
@@ -31,12 +32,22 @@
 #		probe -u --set=SFSUUID ${SFSROOT}
 #		loopback loop (${SFSROOT})/$file
 #		set root=${SFSROOT}
-#		linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+#		linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
 #		initrd (loop)/boot/initrd.img
 # }
 #
-#	Or being extracted into a disk image file (use unsquashfs) and boot from it:
+# You can put the squashfs backup file into an ISO disk image (e.g. replace the /casper/filesystem.squashfs in the official ubuntu ISO image with your own squashfs backup file) and edit grub.cfg to boot it:
+# menuentry "Try Ubuntu live CD" {
+#	set gfxpayload=keep
+#	set file="/casper/filesystem.squashfs"
+#	search --no-floppy -f --set=SFSROOT  $file
+#	probe -u --set=SFSUUID ${SFSROOT}
+#	loopback loop (${SFSROOT})/$file
+#	linux	(loop)/boot/vmlinuz root=UUID=${SFSUUID} rootfstype=iso9660 squashfs=/casper/filesystem.squashfs rw quiet splash locale=zh_CN.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
+#	initrd	(loop)/boot/initrd.img
+# }
 #
+# You can also use unsquashfs to extract the squashfs backup file into a partition of an VHD harddisk image file and boot from it:
 # menuentry "GNU/Linux in VHD IMAGE (Hard disk mode, read and write)" {
 #		set gfxpayload=keep
 #		insmod probe
@@ -45,9 +56,9 @@
 #		set root=${SFSROOT}
 #		probe -u --set=SFSUUID ${SFSROOT}
 #		loopback loop (${SFSROOT})/$file
-#		linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+#		linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
 #		initrd (loop,msdos1)/boot/initrd.img
-#	
+# }
 #
 
 mypath=$0
@@ -80,6 +91,8 @@ distrocheck(){
 		DISTRO='Ubuntu'
 	elif grep -Eqi "Debian" /etc/issue || grep -Eqi "Debian" /etc/*-release; then
 		DISTRO='Debian'
+	elif grep -Eqi "Deepin" /etc/issue || grep -Eqi "Deepin" /etc/*-release; then
+		DISTRO='Deepin'
 	# You may add other distros here
 	else
 		DISTRO='Unknown'
@@ -105,6 +118,10 @@ patchcheck(){
 			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-ubuntu.patch
 			MODULESFILE=/usr/share/initramfs-tools/modules
 			MODULESPATCH=/usr/share/backup/modules-ubuntu.patch
+			if [ $(grep -c 'ln -s "$0" /tmp/mountroot-fail-hooks.d/"$0"' /usr/share/initramfs-tools/scripts/functions) -eq 1 ]; then
+				sed -i 's/ln -s "$0" \/tmp\/mountroot-fail-hooks.d\/"$0"/ln -s "$0" \/tmp\/mountroot-fail-hooks.d\/"$1"/' /usr/share/initramfs-tools/scripts/functions
+				update-initramfs -c -k $(uname -r)
+			fi
 			;;
 		Debian)
 			LOCALFILE=/usr/share/initramfs-tools/scripts/local
@@ -116,9 +133,19 @@ patchcheck(){
 			MODULESFILE=/usr/share/initramfs-tools/modules
 			MODULESPATCH=/usr/share/backup/modules-debian.patch
 			;;
+		Deepin)
+			LOCALFILE=/usr/share/initramfs-tools/scripts/local
+			LOCALPATCH=/usr/share/backup/local-deepin.patch
+			INITFILE=/usr/share/initramfs-tools/init
+			INITPATCH=/usr/share/backup/init-deepin.patch
+			MKINITRAMFSFILE=/usr/sbin/mkinitramfs
+			MKINITRAMFSPATCH=/usr/share/backup/mkinitramfs-deepin.patch
+			MODULESFILE=/usr/share/initramfs-tools/modules
+			MODULESPATCH=/usr/share/backup/modules-deepin.patch
+			;;
 		# You may add other distros here.
 		*)
-			echo "Unsuported distro. Please patch your initramfs-tools manually before trying to backup."
+			echo "Unsupported distro. Please patch your initramfs-tools manually before trying to backup."
 			exit 1
 			;;
 	esac
@@ -131,16 +158,18 @@ patchcheck(){
 }
 
 rebuildtree(){ # Remounting the linux directories effectively excludes removable media, manually mounted devices, windows partitions, virtual files under /proc, /sys, /dev, the /host contents of a wubi install, etc. If your partition scheme is more complicated than listed below, you must add lines to rebuildtree() and destroytree(), otherwise the backup will be partial.
-	mkdir /$1
+	mkdir /$1 /$2 /$3
 	sleep 1
-	mkdir /$1/{boot,cdrom,dev,etc,home,host,media,mnt,opt,proc,root,run,srv,sys,tmp,usr,var}
+	mkdir /$1/{boot,cdrom,dev,etc,home,host,media,mnt,opt,proc,root,run,srv,sys,tmp,usr,var} /$2/{boot,etc,home,opt,root,usr,var,srv} /$3/{boot,etc,home,opt,root,usr,var,srv}
 	cd /$1
 	ln -s usr/bin bin
 	ln -s usr/sbin sbin
 	ln -s usr/lib lib
 	ln -s usr/lib32 lib32
 	ln -s usr/lib64 lib64
-	ln -s usr/libx32 libx32
+#	ln -s usr/libx32 libx32
+	ln -s home Users
+	ln -s media Volumes
 	cd -
 	for i in /home/*; do
 		if [ -d $i ]; then
@@ -154,14 +183,19 @@ rebuildtree(){ # Remounting the linux directories effectively excludes removable
 	done
 	chmod ug+rwx,o+rwt /$1/tmp
 	sleep 1
-	mount --bind /boot /$1/boot
-	mount --bind /etc /$1/etc
-	mount --bind /home /$1/home
-	mount --bind /opt /$1/opt
-	mount --bind /root /$1/root
-	mount --bind /usr /$1/usr
-	mount --bind /var /$1/var
-	mount --bind /srv /$1/srv
+	mount -t overlay overlay -o rw,lowerdir=/boot,upperdir=/$2/boot,workdir=/$3/boot /$1/boot
+	mount -t overlay overlay -o rw,lowerdir=/etc,upperdir=/$2/etc,workdir=/$3/etc /$1/etc
+	mount -t overlay overlay -o rw,lowerdir=/home,upperdir=/$2/home,workdir=/$3/home /$1/home
+	mount -t overlay overlay -o rw,lowerdir=/opt,upperdir=/$2/opt,workdir=/$3/opt /$1/opt
+	mount -t overlay overlay -o rw,lowerdir=/root,upperdir=/$2/root,workdir=/$3/root /$1/root
+	mount -t overlay overlay -o rw,lowerdir=/usr,upperdir=/$2/usr,workdir=/$3/usr /$1/usr
+	mount -t overlay overlay -o rw,lowerdir=/var,upperdir=/$2/var,workdir=/$3/var /$1/var
+	mount -t overlay overlay -o rw,lowerdir=/srv,upperdir=/$2/srv,workdir=/$3/srv /$1/srv
+	sed -i 's/^[^#][^ \t]*[ \t]*\/[ \t].*[0-1]$/overlay \/ overlay rw 0 0/' /$1/etc/fstab
+	local HIGHEST_KERNEL_VERSION=$(ls /boot | grep -P 'vmlinuz-\d+\.\d+\.\d+' | sort -V | tail -n 1 | cut -d '-' -f 2-)
+	rm -f /$1/boot/vmlinuz /$1/boot/initrd.img /$1/boot/*.old
+	ln -s /boot/vmlinuz-$HIGHEST_KERNEL_VERSION /$1/boot/vmlinuz
+	ln -s /boot/initrd.img-$HIGHEST_KERNEL_VERSION /$1/boot/initrd.img
 }
 
 destroytree(){
@@ -173,7 +207,7 @@ destroytree(){
 	umount -l /$1/home
 	umount -l /$1/etc
 	umount -l /$1/boot
-	rm -rf /$1
+	rm -rf /$1 /$2 /$3
 }
 
 
@@ -189,9 +223,38 @@ checkbackupdir(){
 #	[ `ls -A "$*" | wc -l` = 0 ] || { echored "$* is not empty"; exit 1; }
 }
 
+oemdeploy(){
+	case $OEM in
+		current|'')
+			return
+			;;
+		*)
+			oemdir="/usr/local/share/deploy/$OEM"
+			[ ! -d "$oemdir" ] && return
+			for i in `find $oemdir -type f,l | sed 's/ /===/g'`; do
+				i=`echo $i | sed 's/===/ /g'`
+				local source="$1$i"
+				rm -rf "/$1${source#$1$oemdir}"
+				local filedir=`dirname "/$1${source#$1$oemdir}"`
+				[ ! -d "$filedir" ] && mkdir -p "$filedir"
+				cp -a "/$i" "/$1${source#$1$oemdir}"
+			done
+			for i in `find $oemdir -type d | sed 's/ /===/g'`; do
+				i=`echo $i | sed 's/===/ /g'`
+				local source="$1$i"
+				if [ ! -e "/$1${source#$1$oemdir}" ]; then
+					cp -a "/$i" "/$1${source#$1$oemdir}"
+				fi
+			done
+			;;
+	esac
+}
+
 
 dobackup(){
 	bindingdir=`make_new /tmp/bind`
+	deploy_upperdir=`make_new /tmp/upper`
+	deploy_workdir=`make_new /tmp/work`
 	if [ ! -z $BACKUPDIR ]; then
 		if [ -e $BACKUPDIR ]; then
 			BACKUPDIR="`dequotepath "$BACKUPDIR"`"
@@ -206,6 +269,8 @@ dobackup(){
 	fi
 
 	bindingdir="${bindingdir#/}"
+	deploy_upperdir="${deploy_upperdir#/}"
+	deploy_workdir="${deploy_workdir#/}"
 	backupdir="${backupdir#/}"
 	packagecheck
 	patchcheck
@@ -214,126 +279,160 @@ dobackup(){
 	[ "$yn" != "y" ] && exit 1
 
 	exclude=`make_new /tmp/exclude`
-	echo $backupdir > $exclude
+	echo $backupdir/${OEM}backup${today}.squashfs | sed -e 's/^\///g' > $exclude
 	echo $bindingdir >> $exclude
 	echo etc/mtab >> $exclude
 	echo etc/blkid.tab >> $exclude
 	echo etc/udev/rules.d/70-persistent-net.rules >> $exclude
-	ls /var/cache/apt/archives/partial 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/cache\/apt\/archives\/partial\/\1/g' >> $exclude
-	ls /var/crash 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/crash\/\1/g' >> $exclude
-	ls /var/lock 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/lock\/\1/g' >> $exclude
-	ls /var/tmp 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/tmp\/\1/g' >> $exclude
-	ls /var/run 2>/dev/null | sed -e 's/ /\\ /g' -e 's/\(.*\)/var\/run\/\1/g' >> $exclude
-	find /var/log/ /var/lock/ /var/backups/ /var/tmp/ /var/crash/ /var/lib/ubiquity/ /var/mail/ /var/spool/ -type f 2>/dev/null | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var -type f -name "*.deb" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var -type f -name "*.log*" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var -type f -name "*.pid" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var -type f -name "*.bak" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var -type f -name "*.[0-9].gz" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var -type f -name "kdecache*" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /var/lib/apt/lists/ /var/lib/app-info/yaml/ -type f 2>/dev/null | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /var/{run,tmp,lock,crash}/ /var/cache/apt/archives/partial -mindepth 1 -maxdepth 1 2>/dev/null | sed -e 's/^\///g' >> $exclude
+	find /var/{log,tmp,lock,crash,backups,mail,spool}/ /var/lib/ubiquity/ -type f 2>/dev/null | sed -e 's/^\///g' >> $exclude
+	find /var -type f -regex ".*\.\(deb\|log*\|pid\|bak\|[0-9].gz\|kdecache*\)$" | sed -e 's/^\///g' >> $exclude
+	find /var/lib/apt/lists/ /var/lib/app-info/yaml/ -type f 2>/dev/null | sed -e 's/^\///g' >> $exclude
 	for i in /home/* /root; do
-		rm -rf "${i}"/.sudo_as_admin_successful
-		rm -rf "${i}"/"System Volume Information"
-		echo "${i#/}"/System\\ Volume\\ Information >> $exclude
+		echo "${i#/}/System Volume Information" >> $exclude
 		echo "${i#/}"/.sudo_as_admin_successful >> $exclude
 		echo "${i#/}"/.gvfs >> $exclude
-		echo "${i#/}"/.cache >> $exclude
+		find "$i/.cache" -type f -name "event-sound-cache*" 2>/dev/null | sed -e 's/^\///g' >> $exclude
+		echo "${i#/}"/.cache/evolution >> $exclude
+		echo "${i#/}"/.cache/fontconfig >> $exclude
+		echo "${i#/}"/.cache/gedit >> $exclude
+		echo "${i#/}"/.cache/gnome-desktop-thumbnailer >> $exclude
+		echo "${i#/}"/.cache/gnome-software >> $exclude
+		echo "${i#/}"/.cache/gnome-calculator >> $exclude
+		echo "${i#/}"/.cache/clipboard-history@alexsaveau.dev >> $exclude
+		echo "${i#/}"/.cache/babl >> $exclude
+		echo "${i#/}"/.cache/audacity >> $exclude
+		echo "${i#/}/.cache/Docker Desktop" >> $exclude
+		echo "${i#/}"/.cache/evolution >> $exclude
+		echo "${i#/}"/.cache/fanal >> $exclude
+		echo "${i#/}"/.cache/folks >> $exclude
+		echo "${i#/}"/.cache/fontconfig >> $exclude
+		echo "${i#/}"/.cache/FreeCAD >> $exclude
+		echo "${i#/}"/.cache/gegl-0.4 >> $exclude
+		echo "${i#/}"/.cache/gimp >> $exclude
+		echo "${i#/}"/.cache/goldendict >> $exclude
+		echo "${i#/}"/.cache/google-chrome >> $exclude
+		echo "${i#/}"/.cache/gstreamer-1.0 >> $exclude
+		echo "${i#/}"/.cache/libgweather >> $exclude
+		echo "${i#/}"/.cache/mesa_shader_cache >> $exclude
+		echo "${i#/}"/.cache/mozilla >> $exclude
+		echo "${i#/}"/.cache/qtshadercache-x86_64-little_endian-lp64 >> $exclude
+		echo "${i#/}"/.cache/samba >> $exclude
+		echo "${i#/}"/.cache/thumbnails >> $exclude
+		echo "${i#/}"/.cache/tracker3 >> $exclude
+		echo "${i#/}"/.cache/ibus >> $exclude
+		echo "${i#/}"/.cache/inkscape >> $exclude
+		echo "${i#/}"/.cache/inkscape-extension-manager >> $exclude
+		echo "${i#/}"/.cache/install4j >> $exclude
+		echo "${i#/}"/.cache/libgweather >> $exclude
+		echo "${i#/}"/.cache/matplotlib >> $exclude
+		echo "${i#/}"/.cache/Meltytech >> $exclude
+		echo "${i#/}"/.cache/mesa_shader_cache >> $exclude
+		echo "${i#/}"/.cache/Microsoft >> $exclude
+		echo "${i#/}"/.cache/microsoft-edge >> $exclude
+		echo "${i#/}"/.cache/obexd >> $exclude
+		echo "${i#/}"/.cache/org.gnome.SoundRecorder >> $exclude
+		echo "${i#/}"/.cache/profiles >> $exclude
+		echo "${i#/}"/.cache/QGIS >> $exclude
+		echo "${i#/}"/.cache/remarkable >> $exclude
+		echo "${i#/}"/.cache/rhythmbox >> $exclude
+		echo "${i#/}"/.cache/shotwell >> $exclude
+		echo "${i#/}"/.cache/smtube >> $exclude
+		echo "${i#/}"/.cache/totem >> $exclude
+		echo "${i#/}"/.cache/TTKN >> $exclude
+		echo "${i#/}"/.cache/vinagre >> $exclude
+		echo "${i#/}"/.cache/wemeetapp >> $exclude
+		echo "${i#/}"/.cache/yelp >> $exclude
+		echo "${i#/}"/.cache/zotero >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/AlbumCover >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/CachedSongs >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/Logs >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/StorageCache >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/TempFiles >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/Cef/console.log >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/Cef/UserData >> $exclude
+		echo "${i#/}"/.cache/netease-cloud-music/Cef/Cache >> $exclude
 		echo "${i#/}"/.thumbnails >> $exclude
 		echo "${i#/}"/.local/share/gvfs-metadata >> $exclude
 		echo "${i#/}"/.local/gvfs-metadata >> $exclude
 		echo "${i#/}"/.local/share/Trash >> $exclude
+		echo "${i#/}"/.engauge.log >> $exclude
+		echo "${i#/}"/.wps-zotero-proxy.log >> $exclude
+		echo "${i#/}"/.lesshst >> $exclude
+		echo "${i#/}"/.steampath >> $exclude
+		echo "${i#/}"/.steampid >> $exclude
+		echo "${i#/}"/.steam/steam.pid >> $exclude
 		echo "${i#/}"/.bash_history >> $exclude
 		echo "${i#/}"/.bash_logout >> $exclude
 		echo "${i#/}"/.Rhistory >> $exclude
 		echo "${i#/}"/.gvfs >> $exclude
 		echo "${i#/}"/.config/baidunetdisk/Cache >> $exclude
-		echo "${i#/}"/.config/baidunetdisk/Session\\ Storage >> $exclude
+		echo "${i#/}/.config/baidunetdisk/Session Storage" >> $exclude
 		echo "${i#/}"/.config/baidunetdisk/GPUCache >> $exclude
-		echo "${i#/}"/.config/baidunetdisk/Local\\ Storage >> $exclude
-		echo "${i#/}"/.config/baidunetdisk/crash\\ logs >> $exclude
-		echo "${i#/}"/.config/baidunetdisk/Crash\\ Reports >> $exclude
-		echo "${i#/}"/.config/baidunetdisk/Code\\ Cache >> $exclude
+		echo "${i#/}/.config/baidunetdisk/Local Storage" >> $exclude
+		echo "${i#/}/.config/baidunetdisk/crash logs" >> $exclude
+		echo "${i#/}/.config/baidunetdisk/Crash Reports" >> $exclude
+		echo "${i#/}/.config/baidunetdisk/Code Cache" >> $exclude
 		echo "${i#/}"/.config/baidunetdisk/blob_storage >> $exclude
-		echo "${i#/}"/.config/google-chrome/Crash\\ Reports >> $exclude
+		echo "${i#/}/.config/google-chrome/Crash Reports" >> $exclude
 		echo "${i#/}"/.config/google-chrome/GrShaderCache >> $exclude
 		echo "${i#/}"/.config/google-chrome/Default/History >> $exclude
-		echo "${i#/}"/.config/google-chrome/Default/Media\\ History >> $exclude
+		echo "${i#/}/.config/google-chrome/Default/Media History" >> $exclude
+		echo "${i#/}"/.config/Motrix/Cache >> $exclude
+		echo "${i#/}/.config/Motrix/Crash Reports" >> $exclude
+		echo "${i#/}"/.config/Motrix/logs >> $exclude
+		echo "${i#/}/.config/Motrix/Local Storage" >> $exclude
+		echo "${i#/}/.config/Motrix/Code Cache" >> $exclude
+		echo "${i#/}"/.config/Motrix/blob_storage >> $exclude
+		echo "${i#/}"/.config/Motrix/download.session >> $exclude
+		echo "${i#/}"/.config/Motrix/Cookies >> $exclude
+		echo "${i#/}"/.config/Motrix/engine.pid >> $exclude
+		echo "${i#/}"/.config/Motrix/SingletonLock >> $exclude
+		echo "${i#/}"/.config/Motrix/SingletonCookie >> $exclude
+		echo "${i#/}"/.config/Motrix/GPUCache >> $exclude
+		echo "${i#/}"/.config/zy/Cache >> $exclude
+		echo "${i#/}"/.config/zy/GPUCache >> $exclude
+		echo "${i#/}/.config/zy/Crash Reports" >> $exclude
+		echo "${i#/}/.config/zy/Code Cache" >> $exclude
+		echo "${i#/}"/.config/zy/blob_storage >> $exclude
+		echo "${i#/}"/.aMule/Incoming >> $exclude
+		echo "${i#/}"/.aMule/Temp >> $exclude
+		echo "${i#/}"/.aMule/logfile >> $exclude
 		echo "${i#/}"/R >> $exclude
 		echo "${i#/}"/.local/share/Kingsoft/daemon >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/c:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/d:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/e:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/f:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/g:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/h:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/i:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/j:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/k:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/l:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/m:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/n:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/o:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/p:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/q:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/r:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/s:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/t:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/u:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/v:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/w:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/x:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/y:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/z:: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/f: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/g: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/h: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/i: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/j: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/k: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/l: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/m: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/n: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/o: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/p: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/q: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/r: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/s: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/t: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/u: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/v: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/w: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/x: >> $exclude
-		echo "${i#/}"/.cxoffice/Common/dosdevices/y: >> $exclude
+		echo -e "${i#/}"/.cxoffice/Common/dosdevices/{a..z}::"\n" | sed -e 's/^\///g' -e 's/^ //g' -e '/^$/d' >> $exclude
+		echo -e "${i#/}"/.cxoffice/Common/dosdevices/{f..y}:"\n" | sed -e 's/^\///g' -e 's/^ //g' -e '/^$/d' >> $exclude
 		echo "${i#/}"/.vboxclient-clipboard.pid >> $exclude
 		echo "${i#/}"/.vboxclient-display-svga-x11.pid >> $exclude
 		echo "${i#/}"/.vboxclient-draganddrop.pid >> $exclude
 		echo "${i#/}"/.vboxclient-seamless.pid >> $exclude
+		echo "${i#/}"/.xsession-errors >> $exclude
+		echo "${i#/}"/.oracle_jre_usage >> $exclude
+		echo "${i#/}"/.vnc >> $exclude
+		echo "${i#/}"/.grass8 >> $exclude
 		echo "${i#/}"/.ssh >> $exclude
-		ls $i/Downloads/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Downloads/"{} >> $exclude
-		ls $i/Documents/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Documents/"{} >> $exclude
-		ls $i/Desktop/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Desktop/"{} >> $exclude
-		ls $i/Movies/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Movies/"{} >> $exclude
-		ls $i/Music/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Music/"{} >> $exclude
-		ls $i/Pictures/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Pictures/"{} >> $exclude
-		ls $i/Public/ 2>/dev/null | sed -e 's/ /\\ /g' | xargs -i echo ${i#/}"/Public/"{} >> $exclude
+		echo "${i#/}"/.uim.d >> $exclude
+		echo "${i#/}"/.config/QQ >> $exclude
+		echo "${i#/}"/.config/webplotdigitizer >> $exclude
+		echo "${i#/}"/.config/cef_user_data >> $exclude
+		ls "$i/.xorgxrdp.*.log"  2>/dev/null | sed -e 's/^\///g' >> $exclude
+		echo "${i#/}"/.ollama/history >> $exclude
+		echo "${i#/}"/.sys1og.conf >> $exclude
+		echo "${i#/}"/.xwechat >> $exclude
+		echo "${i#/}"/.var >> $exclude
+		echo "${i#/}"/.kube >> $exclude
+		find "$i/.docker/desktop/log/" -type f -name "*.log" 2>/dev/null | sed -e 's/^\///g' >> $exclude
+		find "$i/.docker/desktop/tasks/" -type f 2>/dev/null | sed -e 's/^\///g' >> $exclude
+		find "$i"/{Downloads,Documents,Desktop,Movies,Music,Pictures,Public} -mindepth 1 -maxdepth 1 2>/dev/null | sed -e 's/^\///g' >> $exclude
 	done
-	find /home /root -type f -name "*-journal" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /home /root -type f -name "*.bak" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /home /root -type f -name "*.old" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /home /root -type f -name "*.log" | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
-	find /home /root -type s | sed -e 's/^\///g' -e 's/ /\\ /g' >> $exclude
+	find /home /root -type f -regex ".*\(-journal\|\.bak\|\.old\)$" | sed -e 's/^\///g' >> $exclude
+	#find /home /root -type f -name "*.log" 2>/dev/null | sed -e 's/^\///g' >> $exclude
+	find /home /root -type s 2>/dev/null | sed -e 's/^\///g' >> $exclude
 	echo var/lib/dbus/machine-id >> $exclude
-	echo lost+found >> $exclude
-	echo boot/lost+found >> $exclude
-	echo home/lost+found >> $exclude
-	echo tmp/lost+found >> $exclude
-	echo usr/lost+found >> $exclude
-	echo var/lost+found >> $exclude
-	echo srv/lost+found >> $exclude
-	echo opt/lost+found >> $exclude
-	echo usr/local/lost+found >> $exclude
+	echo -e {,boot,cdrom,dev,etc,home,host,media,mnt,opt,proc,root,run,srv,sys,tmp,usr,var}/{lost+found,"System Volume Information",.Trash,.Trashes,.fseventsd,.TemporaryItems,.lyndisk,.Trash-{1..2000}}"\n" | sed -e 's/^ //g' -e 's/^\///g' -e '/^$/d' >> $exclude
 	echo usr/share/applications/wps-office-prometheus.desktop >> $exclude
+	echo usr/share/applications/wps-office-uninstall.desktop >> $exclude
+	echo usr/share/applications/wps-office-officeassistant.desktop >> $exclude
 	echo usr/share/applications/htop.desktop >> $exclude
 	echo usr/share/applications/lftp.desktop >> $exclude
 	echo usr/share/applications/display-im6.q16.desktop >> $exclude
@@ -356,17 +455,19 @@ dobackup(){
 	read ex
 	done
 
-	rebuildtree $bindingdir
-
+	rebuildtree $bindingdir $deploy_upperdir $deploy_workdir
 
 	echored "Start to backup?(y/n)"
 	read yn
-	[ "$yn" != "y" ] && { destroytree $bindingdir; rm $exclude; exit 1; }
+	[ "$yn" != "y" ] && { destroytree $bindingdir $deploy_upperdir $deploy_workdir; rm $exclude; exit 1; }
+	oemdeploy $bindingdir
 	stime=`date`
 	mkdir -p "/$backupdir"
 	SQUASHFSOPTS="-no-recovery -always-use-fragments -b 1M -noappend"
-	mksquashfs /$bindingdir "/$backupdir/backup$today.squashfs" $SQUASHFSOPTS -ef $exclude
-	destroytree $bindingdir
+#	SQUASHFSOPTS="-comp zstd -Xcompression-level 22 -no-recovery -always-use-fragments -b 1M -noappend"
+#	SQUASHFSOPTS="-comp xz -no-recovery -always-use-fragments -b 1M -noappend"
+	mksquashfs /$bindingdir "/$backupdir/${OEM}backup${today}.squashfs" $SQUASHFSOPTS -ef $exclude
+	destroytree $bindingdir $deploy_upperdir $deploy_workdir
 	echored "Your backup is ready in /$backupdir :)"
 	echored " started at: $stime\nfinished at: `date`"
 	tput bel
@@ -381,15 +482,17 @@ echohelp(){
 This program can backup your running Linux system to a compressed, bootable squashfs file.
 
 Usage:
-sudo $mypath -b			Backup current running system to `make_new /tmp/backup-$today`"/"
-sudo $mypath -b /mnt/sdb2		Backup current running system to /mnt/sdb2/
-sudo $mypath -h			View help.
+sudo $mypath -b                   Backup current running system to `make_new /tmp/backup-$today`"/"
+sudo $mypath -b current /mnt/sdb2 Backup current running system to /mnt/sdb2/
+sudo $mypath -b lenovo            Apply OEM settings to current system & backup to `make_new /tmp/backup-$today`"/"
+sudo $mypath -b lenovo /mnt/sdb2  Apply OEM settings to current system & backup to /mnt/sdb2/
+sudo $mypath -h                   View help.
 
 You can specify where to save the backup, files/folders you want to exclude from the backup.
 You don't need to umount external media, windows partitions, or any manually mounted partitions. They will be automatically ignored. Therefore you can save the backup to external media, windows partitions, etc.
 Waring: You must make sure you have enough space to save the backup.
 
-The squashfs file can boot directly using GNU grub:
+Example of GNU GRUB config setting (grub.cfg) to boot squashfs backup file located in the root directory of any partition:
 
  menuentry \"GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)\" {
 		set gfxpayload=keep
@@ -400,8 +503,20 @@ The squashfs file can boot directly using GNU grub:
 		probe -u --set=SFSUUID \${SFSROOT}
 		loopback loop (\${SFSROOT})/\$file
 		set root=\${SFSROOT}
-		linux (loop)/boot/vmlinuz root=UUID=\${SFSUUID} squashfs=\$file rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+		linux (loop)/boot/vmlinuz root=UUID=\${SFSUUID} squashfs=\$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
 		initrd (loop)/boot/initrd.img
+ }
+
+You can put the squashfs backup file into an ISO disk image (e.g. replace the /casper/filesystem.squashfs in the official ubuntu ISO image with your own squashfs backup file) and edit grub.cfg in the ISO image to boot it:
+
+ menuentry \"Try Ubuntu live CD\" {
+	set gfxpayload=keep
+	set file=\"/casper/filesystem.squashfs\"
+	search --no-floppy -f --set=SFSROOT  \$file
+	probe -u --set=SFSUUID \${SFSROOT}
+	loopback loop (\${SFSROOT})/\$file
+	linux	(loop)/boot/vmlinuz root=UUID=${SFSUUID} rootfstype=iso9660 squashfs=/casper/filesystem.squashfs rw quiet splash locale=zh_CN.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
+	initrd	(loop)/boot/initrd.img
  }
 
 Or you can manually restore it to a physical HD partion or a disk image file:
@@ -426,22 +541,25 @@ And boot from it (GNU grub). Here is an example of booting from a VHD file:
 		set root=\${SFSROOT}
 		probe -u --set=SFSUUID \${SFSROOT}
 		loopback loop (\${SFSROOT})/\$file
-		linux (loop,msdos1)/boot/vmlinuz root=UUID=\${SFSUUID} kloop=\$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+		linux (loop,msdos1)/boot/vmlinuz root=UUID=\${SFSUUID} kloop=\$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
 		initrd (loop,msdos1)/boot/initrd.img
 " | more
 }
 
 echousage(){
 	echo "Usage:
-sudo $mypath -b			Backup current running system to `make_new /tmp/backup-$today`"/"
-sudo $mypath -b /mnt/sdb2		Backup current running system to /mnt/sdb2/
-sudo $mypath -h			View help."
+sudo $mypath -b                   Backup current running system to `make_new /tmp/backup-$today`"/"
+sudo $mypath -b current /mnt/sdb2 Backup current running system to /mnt/sdb2/
+sudo $mypath -b lenovo            Apply OEM settings to current system & backup to `make_new /tmp/backup-$today`"/"
+sudo $mypath -b lenovo /mnt/sdb2  Apply OEM settings to current system & backup to /mnt/sdb2/
+sudo $mypath -h                   View help."
 }
 
 today=`date +%d.%m.%Y`
-version="V3.2, Dec 25, 2021"
+version="V3.7, Jun 16, 2024"
 OPTION=$1
-BACKUPDIR=$2
+OEM=$2
+BACKUPDIR=$3
 if [ "`id -u`" == 0 ]; then
 	if [ ! -z $OPTION ]; then
 		case $OPTION in
