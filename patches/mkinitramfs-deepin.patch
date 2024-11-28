@@ -1,5 +1,5 @@
---- mkinitramfs.orig	2022-01-11 02:52:48.436634900 +0800
-+++ mkinitramfs	2022-01-09 05:10:48.533355700 +0800
+--- /usr/sbin/mkinitramfs.orig	2023-01-17 10:22:57.000000000 +0800
++++ /usr/sbin/mkinitramfs	2024-08-05 14:36:10.102819564 +0800
 @@ -244,6 +244,7 @@
  export MODULES
  export BUSYBOX
@@ -18,7 +18,7 @@
  # First file executed by linux
  cp -p /usr/share/initramfs-tools/init "${DESTDIR}/init"
  
-@@ -345,6 +349,20 @@
+@@ -345,6 +349,22 @@
  # module-init-tools
  copy_exec /sbin/modprobe /sbin
  copy_exec /sbin/rmmod /sbin
@@ -33,6 +33,8 @@
 +copy_exec /sbin/vgscan /sbin
 +copy_exec /sbin/shutdown /shutdown
 +copy_exec /usr/bin/qemu-nbd /bin
++copy_exec /usr/sbin/chkdsk /sbin
++copy_exec /usr/bin/lsblk /bin
 +touch ${DESTDIR}/etc/initrd-release
 +touch ${DESTDIR}/version
 +
