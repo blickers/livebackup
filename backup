@@ -19,45 +19,44 @@
 # You should have received a copy of the GNU General Public License along with this program;
 # if not, see <http://www.gnu.org/licenses>.
 
-# Backup running installed Linux system or live Linux system it self into a bootable squashfs file.
+# Backup running Linux system (installed or live system) as a bootable squashfs file.
 #
 # Example of GNU GRUB config setting (grub.cfg) to boot squashfs backup file located in the root directory of any partition:
-#
 # menuentry "GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)" {
-#		set gfxpayload=keep
-#		insmod probe
-#		insmod squash4
-#		set file="/backup03.12.2021.squashfs"
-#		search --no-floppy -f --set=SFSROOT  $file
-#		probe -u --set=SFSUUID ${SFSROOT}
-#		loopback loop (${SFSROOT})/$file
-#		set root=${SFSROOT}
-#		linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
-#		initrd (loop)/boot/initrd.img
+#	set gfxpayload=keep
+#	insmod probe
+#	insmod squash4
+#	set file="/backup03.12.2021.squashfs"
+#	search --no-floppy -f --set=SFSROOT $file
+#	probe -u --set=SFSUUID ${SFSROOT}
+#	loopback loop (${SFSROOT})/$file
+#	set root=${SFSROOT}
+#	linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
+#	initrd (loop)/boot/initrd.img
 # }
 #
 # You can put the squashfs backup file into an ISO disk image (e.g. replace the /casper/filesystem.squashfs in the official ubuntu ISO image with your own squashfs backup file) and edit grub.cfg to boot it:
 # menuentry "Try Ubuntu live CD" {
 #	set gfxpayload=keep
 #	set file="/casper/filesystem.squashfs"
-#	search --no-floppy -f --set=SFSROOT  $file
+#	search --no-floppy -f --set=SFSROOT $file
 #	probe -u --set=SFSUUID ${SFSROOT}
 #	loopback loop (${SFSROOT})/$file
-#	linux	(loop)/boot/vmlinuz root=UUID=${SFSUUID} rootfstype=iso9660 squashfs=/casper/filesystem.squashfs rw quiet splash locale=zh_CN.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
+#	linux	(loop)/boot/vmlinuz root=UUID=${SFSUUID} rootfstype=iso9660 squashfs=/casper/filesystem.squashfs rw quiet splash locale=zh_CN.UTF-8 initramfs.runsize=50%
 #	initrd	(loop)/boot/initrd.img
 # }
 #
-# You can also use unsquashfs to extract the squashfs backup file into a partition of an VHD harddisk image file and boot from it:
+# You can also use unsquashfs to extract the squashfs file into a partition in an VHD harddisk image file and boot from it:
 # menuentry "GNU/Linux in VHD IMAGE (Hard disk mode, read and write)" {
-#		set gfxpayload=keep
-#		insmod probe
-#		set file="/VirtualBox/linux.vhd"
-#		search --no-floppy -f --set=SFSROOT  $file
-#		set root=${SFSROOT}
-#		probe -u --set=SFSUUID ${SFSROOT}
-#		loopback loop (${SFSROOT})/$file
-#		linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
-#		initrd (loop,msdos1)/boot/initrd.img
+#	set gfxpayload=keep
+#	insmod probe
+#	set file="/VirtualBox/linux.vhd"
+#	search --no-floppy -f --set=SFSROOT $file
+#	set root=${SFSROOT}
+#	probe -u --set=SFSUUID ${SFSROOT}
+#	loopback loop (${SFSROOT})/$file
+#	linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
+#	initrd (loop,msdos1)/boot/initrd.img
 # }
 #
 
@@ -100,16 +99,19 @@ distrocheck(){
 }
 
 patchcheck(){
-	# Four files are pathed to make it possible to boot from squashfs file or virtual hard disk image file.
-	# The four files are (eg. Ubuntu & Debian):
+	# Five files are pathed to make it possible to boot from squashfs file or virtual hard disk image file.
+	# The five files are (eg. Ubuntu & Debian):
 	#			/usr/sbin/mkinitramfs
 	#			/usr/share/initramfs-tools/init
 	#			/usr/share/initramfs-tools/scripts/local
+	#			/usr/share/initramfs-tools/scripts/functions
 	#			/usr/share/initramfs-tools/modules
 	# Here we check whether these files were patched or not, 
 	distrocheck
 	case $DISTRO in
 		Ubuntu)
+			FUNCTIONSFILE=/usr/share/initramfs-tools/scripts/functions
+			FUNCTIONSPATCH=/usr/share/backup/functions-ubuntu.patch
 			LOCALFILE=/usr/share/initramfs-tools/scripts/local
 			LOCALPATCH=/usr/share/backup/local-ubuntu.patch
 			INITFILE=/usr/share/initramfs-tools/init
@@ -124,6 +126,8 @@ patchcheck(){
 			fi
 			;;
 		Debian)
+			FUNCTIONSFILE=/usr/share/initramfs-tools/scripts/functions
+			FUNCTIONSPATCH=/usr/share/backup/functions-debian.patch
 			LOCALFILE=/usr/share/initramfs-tools/scripts/local
 			LOCALPATCH=/usr/share/backup/local-debian.patch
 			INITFILE=/usr/share/initramfs-tools/init
@@ -134,6 +138,8 @@ patchcheck(){
 			MODULESPATCH=/usr/share/backup/modules-debian.patch
 			;;
 		Deepin)
+			FUNCTIONSFILE=/usr/share/initramfs-tools/scripts/functions
+			FUNCTIONSPATCH=/usr/share/backup/functions-deepin.patch
 			LOCALFILE=/usr/share/initramfs-tools/scripts/local
 			LOCALPATCH=/usr/share/backup/local-deepin.patch
 			INITFILE=/usr/share/initramfs-tools/init
@@ -150,6 +156,7 @@ patchcheck(){
 			;;
 	esac
 	local PN=0
+	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $FUNCTIONSFILE) -eq 0 ] && { patch $FUNCTIONSFILE < $FUNCTIONSPATCH; [ $? -gt 0 ] && { echored "Patch $FUNCTIONSFILE failed. Please update $FUNCTIONSPATCH"; exit 1;} || PN=1; }
 	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $MKINITRAMFSFILE) -eq 0 ] && { patch $MKINITRAMFSFILE < $MKINITRAMFSPATCH; [ $? -gt 0 ] && { echored "Patch $MKINITRAMFSFILE failed. Please update $MKINITRAMFSPATCH"; exit 1;} || PN=1; }
 	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $LOCALFILE) -eq 0 ] && { patch $LOCALFILE < $LOCALPATCH; [ $? -gt 0 ] && { echored "Patch $LOCALFILE failed. Please update $LOCALPATCH"; exit 1;} || PN=1; }
 	[ $(grep -c '###DO#NOT#DELETE#THIS#MARKER###' $INITFILE) -eq 0 ] && { patch $INITFILE < $INITPATCH; [ $? -gt 0 ] && { echored "Patch $INITFILE failed. Please update $INITPATCH"; exit 1;} || PN=1; }
@@ -167,20 +174,20 @@ rebuildtree(){ # Remounting the linux directories effectively excludes removable
 	ln -s usr/lib lib
 	ln -s usr/lib32 lib32
 	ln -s usr/lib64 lib64
-#	ln -s usr/libx32 libx32
 	ln -s home Users
 	ln -s media Volumes
 	cd -
-	for i in /home/*; do
-		if [ -d $i ]; then
-			mkdir "/$1/media/${i#/home/}"
-			chmod 750 "/$1/media/${i#/home/}"
-			grep ${i#/home/} /etc/passwd | awk -F':' '{print $3":"$4}' | xargs -i chown {} "/$1/media/${i#/home/}"
-		fi
-	done
-	for i in `cat /etc/fstab | grep media | cut -s -d " " -f 2`; do
-		mkdir -p /$1$i;
-	done
+##	Since systemd will load fstab and create automount units, and "systemctl restart local-fs.target" will creat mount points automatically, we do not need to creat each mount point according to /etc/fstab by he following code (therefore we comment out the following lines):
+#	for i in /home/*; do
+#		if [ -d $i ]; then
+#			mkdir "/$1/media/${i#/home/}"
+#			chmod 750 "/$1/media/${i#/home/}"
+#			grep ${i#/home/} /etc/passwd | awk -F':' '{print $3":"$4}' | xargs -i chown {} "/$1/media/${i#/home/}"
+#		fi
+#	done
+#	for i in `cat /etc/fstab | grep media | cut -s -d " " -f 2`; do
+#		[ ! -d /$1$i ] && mkdir -p /$1$i;
+#	done
 	chmod ug+rwx,o+rwt /$1/tmp
 	sleep 1
 	mount -t overlay overlay -o rw,lowerdir=/boot,upperdir=/$2/boot,workdir=/$3/boot /$1/boot
@@ -191,7 +198,9 @@ rebuildtree(){ # Remounting the linux directories effectively excludes removable
 	mount -t overlay overlay -o rw,lowerdir=/usr,upperdir=/$2/usr,workdir=/$3/usr /$1/usr
 	mount -t overlay overlay -o rw,lowerdir=/var,upperdir=/$2/var,workdir=/$3/var /$1/var
 	mount -t overlay overlay -o rw,lowerdir=/srv,upperdir=/$2/srv,workdir=/$3/srv /$1/srv
-	sed -i 's/^[^#][^ \t]*[ \t]*\/[ \t].*[0-1]$/overlay \/ overlay rw 0 0/' /$1/etc/fstab
+##	"sed -i" will ruin soft link. If /etc/fstab is a soft link, let it be:
+	[ ! -L "/$1/etc/fstab" ] && sed -i 's/^[^#][^ \t]*[ \t]*\/[ \t].*[0-1]$/overlay \/ overlay rw 0 0/' /$1/etc/fstab
+	[ -L "/$1/etc/fstab" ] && rm -rf "/$1/var/lib/bluetooth" && mkdir "/$1/var/lib/bluetooth" && chmod 700 "/$1/var/lib/bluetooth"
 	local HIGHEST_KERNEL_VERSION=$(ls /boot | grep -P 'vmlinuz-\d+\.\d+\.\d+' | sort -V | tail -n 1 | cut -d '-' -f 2-)
 	rm -f /$1/boot/vmlinuz /$1/boot/initrd.img /$1/boot/*.old
 	ln -s /boot/vmlinuz-$HIGHEST_KERNEL_VERSION /$1/boot/vmlinuz
@@ -231,6 +240,13 @@ oemdeploy(){
 		*)
 			oemdir="/usr/local/share/deploy/$OEM"
 			[ ! -d "$oemdir" ] && return
+			for i in `find /usr/local/share/deploy -type f,l | sed 's/\/usr\/local\/share\/deploy\/[^\/]*\//\//g' | sort -u | sed 's/ /===/g'`; do
+				i=`echo $i | sed 's/===/ /g'`
+				source="/"$1$i
+				rm -rf "$source"
+				filedir=`dirname "$source"`
+				[ -d "$filedir" ] && [ -z "$(ls -A "$filedir" 2>/dev/null)" ] && rm -rf "$filedir"
+			done
 			for i in `find $oemdir -type f,l | sed 's/ /===/g'`; do
 				i=`echo $i | sed 's/===/ /g'`
 				local source="$1$i"
@@ -299,7 +315,7 @@ dobackup(){
 		echo "${i#/}"/.cache/gnome-desktop-thumbnailer >> $exclude
 		echo "${i#/}"/.cache/gnome-software >> $exclude
 		echo "${i#/}"/.cache/gnome-calculator >> $exclude
-		echo "${i#/}"/.cache/clipboard-history@alexsaveau.dev >> $exclude
+		echo "${i#/}/.cache/clipboard-history@alexsaveau.dev" >> $exclude
 		echo "${i#/}"/.cache/babl >> $exclude
 		echo "${i#/}"/.cache/audacity >> $exclude
 		echo "${i#/}/.cache/Docker Desktop" >> $exclude
@@ -310,8 +326,9 @@ dobackup(){
 		echo "${i#/}"/.cache/FreeCAD >> $exclude
 		echo "${i#/}"/.cache/gegl-0.4 >> $exclude
 		echo "${i#/}"/.cache/gimp >> $exclude
-		echo "${i#/}"/.cache/goldendict >> $exclude
 		echo "${i#/}"/.cache/google-chrome >> $exclude
+		echo "${i#/}"/.cache/microsoft-edge >> $exclude
+		echo "${i#/}"/.cache/Microsoft >> $exclude
 		echo "${i#/}"/.cache/gstreamer-1.0 >> $exclude
 		echo "${i#/}"/.cache/libgweather >> $exclude
 		echo "${i#/}"/.cache/mesa_shader_cache >> $exclude
@@ -366,6 +383,7 @@ dobackup(){
 		echo "${i#/}"/.bash_logout >> $exclude
 		echo "${i#/}"/.Rhistory >> $exclude
 		echo "${i#/}"/.gvfs >> $exclude
+		echo "${i#/}"/.ollama/history >> $exclude
 		echo "${i#/}"/.config/baidunetdisk/Cache >> $exclude
 		echo "${i#/}/.config/baidunetdisk/Session Storage" >> $exclude
 		echo "${i#/}"/.config/baidunetdisk/GPUCache >> $exclude
@@ -400,6 +418,7 @@ dobackup(){
 		echo "${i#/}"/.aMule/logfile >> $exclude
 		echo "${i#/}"/R >> $exclude
 		echo "${i#/}"/.local/share/Kingsoft/daemon >> $exclude
+		echo "${i#/}"/.local/share/Kingsoft/office6/data/backup >> $exclude
 		echo -e "${i#/}"/.cxoffice/Common/dosdevices/{a..z}::"\n" | sed -e 's/^\///g' -e 's/^ //g' -e '/^$/d' >> $exclude
 		echo -e "${i#/}"/.cxoffice/Common/dosdevices/{f..y}:"\n" | sed -e 's/^\///g' -e 's/^ //g' -e '/^$/d' >> $exclude
 		echo "${i#/}"/.vboxclient-clipboard.pid >> $exclude
@@ -421,13 +440,16 @@ dobackup(){
 		echo "${i#/}"/.xwechat >> $exclude
 		echo "${i#/}"/.var >> $exclude
 		echo "${i#/}"/.kube >> $exclude
-		find "$i/.docker/desktop/log/" -type f -name "*.log" 2>/dev/null | sed -e 's/^\///g' >> $exclude
+		find "$i/.docker/desktop/log/" -type f -name "*.log*" 2>/dev/null | sed -e 's/^\///g' >> $exclude
 		find "$i/.docker/desktop/tasks/" -type f 2>/dev/null | sed -e 's/^\///g' >> $exclude
+		find "$i/.config/VirtualBox/" -type f -regex ".*\(\-prev\|\.log.*\)$" 2>/dev/null | sed -e 's/^\///g' >> $exclude
 		find "$i"/{Downloads,Documents,Desktop,Movies,Music,Pictures,Public} -mindepth 1 -maxdepth 1 2>/dev/null | sed -e 's/^\///g' >> $exclude
 	done
 	find /home /root -type f -regex ".*\(-journal\|\.bak\|\.old\)$" | sed -e 's/^\///g' >> $exclude
+	find /etc -type f -regex ".*\(~\|\.bak\|\old\)$" | sed -e 's/^\///g' >> $exclude
 	#find /home /root -type f -name "*.log" 2>/dev/null | sed -e 's/^\///g' >> $exclude
 	find /home /root -type s 2>/dev/null | sed -e 's/^\///g' >> $exclude
+	echo root/.local/share/rstudio/log >> $exclude
 	echo var/lib/dbus/machine-id >> $exclude
 	echo -e {,boot,cdrom,dev,etc,home,host,media,mnt,opt,proc,root,run,srv,sys,tmp,usr,var}/{lost+found,"System Volume Information",.Trash,.Trashes,.fseventsd,.TemporaryItems,.lyndisk,.Trash-{1..2000}}"\n" | sed -e 's/^ //g' -e 's/^\///g' -e '/^$/d' >> $exclude
 	echo usr/share/applications/wps-office-prometheus.desktop >> $exclude
@@ -463,8 +485,8 @@ dobackup(){
 	oemdeploy $bindingdir
 	stime=`date`
 	mkdir -p "/$backupdir"
-	SQUASHFSOPTS="-no-recovery -always-use-fragments -b 1M -noappend"
-#	SQUASHFSOPTS="-comp zstd -Xcompression-level 22 -no-recovery -always-use-fragments -b 1M -noappend"
+#	SQUASHFSOPTS="-no-recovery -always-use-fragments -b 1M -noappend"
+	SQUASHFSOPTS="-comp zstd -Xcompression-level 22 -no-recovery -always-use-fragments -b 1M -noappend"
 #	SQUASHFSOPTS="-comp xz -no-recovery -always-use-fragments -b 1M -noappend"
 	mksquashfs /$bindingdir "/$backupdir/${OEM}backup${today}.squashfs" $SQUASHFSOPTS -ef $exclude
 	destroytree $bindingdir $deploy_upperdir $deploy_workdir
@@ -479,7 +501,7 @@ dobackup(){
 
 echohelp(){
 	echo "Generic Debian/Ubuntu Linux Live System Backup, Copyright (c) 2021 blicker
-This program can backup your running Linux system to a compressed, bootable squashfs file.
+Backup your running Linux system as a compressed, bootable squashfs file.
 
 Usage:
 sudo $mypath -b                   Backup current running system to `make_new /tmp/backup-$today`"/"
@@ -495,16 +517,16 @@ Waring: You must make sure you have enough space to save the backup.
 Example of GNU GRUB config setting (grub.cfg) to boot squashfs backup file located in the root directory of any partition:
 
  menuentry \"GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)\" {
-		set gfxpayload=keep
-		insmod probe
-		insmod squash4
-		set file="`make_new /backup$today.squashfs`"
-		search --no-floppy -f --set=SFSROOT  \$file
-		probe -u --set=SFSUUID \${SFSROOT}
-		loopback loop (\${SFSROOT})/\$file
-		set root=\${SFSROOT}
-		linux (loop)/boot/vmlinuz root=UUID=\${SFSUUID} squashfs=\$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
-		initrd (loop)/boot/initrd.img
+	set gfxpayload=keep
+	insmod probe
+	insmod squash4
+	set file="`make_new /backup$today.squashfs`"
+	search --no-floppy -f --set=SFSROOT \$file
+	probe -u --set=SFSUUID \${SFSROOT}
+	loopback loop (\${SFSROOT})/\$file
+	set root=\${SFSROOT}
+	linux (loop)/boot/vmlinuz root=UUID=\${SFSUUID} squashfs=\$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
+	initrd (loop)/boot/initrd.img
  }
 
 You can put the squashfs backup file into an ISO disk image (e.g. replace the /casper/filesystem.squashfs in the official ubuntu ISO image with your own squashfs backup file) and edit grub.cfg in the ISO image to boot it:
@@ -512,10 +534,10 @@ You can put the squashfs backup file into an ISO disk image (e.g. replace the /c
  menuentry \"Try Ubuntu live CD\" {
 	set gfxpayload=keep
 	set file=\"/casper/filesystem.squashfs\"
-	search --no-floppy -f --set=SFSROOT  \$file
+	search --no-floppy -f --set=SFSROOT \$file
 	probe -u --set=SFSUUID \${SFSROOT}
 	loopback loop (\${SFSROOT})/\$file
-	linux	(loop)/boot/vmlinuz root=UUID=${SFSUUID} rootfstype=iso9660 squashfs=/casper/filesystem.squashfs rw quiet splash locale=zh_CN.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
+	linux	(loop)/boot/vmlinuz root=UUID=${SFSUUID} rootfstype=iso9660 squashfs=/casper/filesystem.squashfs rw quiet splash locale=zh_CN.UTF-8 initramfs.runsize=50%
 	initrd	(loop)/boot/initrd.img
  }
 
@@ -534,15 +556,15 @@ EDIT fstab, change the root file system type and root partition UUID:
 And boot from it (GNU grub). Here is an example of booting from a VHD file:
 
  menuentry \"GNU/Linux in VHD IMAGE (Hard disk mode, read and write)\" {
-		set gfxpayload=keep
-		insmod probe
-		set file="/VirtualBox/linux.vhd"
-		search --no-floppy -f --set=SFSROOT  \$file
-		set root=\${SFSROOT}
-		probe -u --set=SFSUUID \${SFSROOT}
-		loopback loop (\${SFSROOT})/\$file
-		linux (loop,msdos1)/boot/vmlinuz root=UUID=\${SFSUUID} kloop=\$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 initramfs.runsize=50% acpi_backlight=vendor
-		initrd (loop,msdos1)/boot/initrd.img
+	set gfxpayload=keep
+	insmod probe
+	set file="/VirtualBox/linux.vhd"
+	search --no-floppy -f --set=SFSROOT \$file
+	set root=\${SFSROOT}
+	probe -u --set=SFSUUID \${SFSROOT}
+	loopback loop (\${SFSROOT})/\$file
+	linux (loop,msdos1)/boot/vmlinuz root=UUID=\${SFSUUID} kloop=\$file kroot=/dev/mapper/loop0p1 rw apparmor=0 quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
+	initrd (loop,msdos1)/boot/initrd.img
 " | more
 }
 
@@ -556,7 +578,7 @@ sudo $mypath -h                   View help."
 }
 
 today=`date +%d.%m.%Y`
-version="V3.7, Jun 16, 2024"
+version="V3.9, Nov 24, 2024"
 OPTION=$1
 OEM=$2
 BACKUPDIR=$3
