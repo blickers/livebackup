@@ -1,5 +1,5 @@
---- local.orig	2022-01-11 02:53:58.442624700 +0800
-+++ local	2022-01-09 05:20:25.466859800 +0800
+--- /usr/share/initramfs-tools/scripts/local.orig	2023-01-17 10:22:57.000000000 +0800
++++ /usr/share/initramfs-tools/scripts/local	2024-11-24 21:02:57.018720152 +0800
 @@ -194,6 +194,9 @@
  	fi
  
@@ -10,14 +10,14 @@
  
      if [ "${readonly?}" = "y" ] && \
         [ -z "$LOOP" ]; then
-@@ -258,8 +261,380 @@
+@@ -258,8 +261,608 @@
  		if [ -d "$rootmnt/host" ]; then
  			mount -o move /host "$rootmnt/host"
  		fi
 +	fi
 +fi
 +if [ -n "$KLOOP" ]; then
-+
+ 
 +	### reset the value of the root variable 
 +	HOSTDEV="${ROOT}"
 +	NEWROOT="${rootmnt}"
@@ -41,13 +41,28 @@
 +					modprobe ntfs3 >/dev/null 2>&1
 +					mount -t ntfs3 -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs3 -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
 +					modprobe ntfs >/dev/null 2>&1
 +					mount -t ntfs -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ -a /usr/bin/ntfs-3g ]; then
 +					ntfs-3g -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						ntfs-3g -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				fi
 +				if [ "$mountroot_status" != 0 ]; then
 +						panic "
@@ -84,6 +99,46 @@
 +"
 +				fi
 +				;;
++			btrfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15 ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15,subvol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
++"
++				fi
++				;;
++			apfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime,vol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
++"
++				fi
++				;;
 +			*)
 +				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
 +				mount -t ${HOSTFSTYPE} -o rw ${HOSTDEV} /host
@@ -97,7 +152,7 @@
 +		kpartx -av /host${KLOOP}
 +		[ -e "$realroot" ] || sleep 3
 +	fi
- 
++
 +	### probe lvm on vhd-file
 +	if [ -n "$KLVM" ];  then
 +		modprobe dm-mod
@@ -118,8 +173,12 @@
 +		[ -z "${KLOOPFSTYPE}" ] && KLOOPFSTYPE="ext4"
 +	fi
 +	[ -e "$realroot" ] || sleep 3
-+	mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
-+	
++	if [ "${KLOOPFSTYPE}" == "btrfs" ]; then
++		mount    ${roflag} -t "${KLOOPFSTYPE}"  -o defaults,autodefrag,compress-force=zstd:15 $realroot $NEWROOT
++	else
++		mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
++	fi
++
 +	### mount /host in initrd to /host of the realrootfs
 +	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
 +	mount --move /host   ${NEWROOT}/host
@@ -149,13 +208,28 @@
 +					modprobe ntfs3 >/dev/null 2>&1
 +					mount -t ntfs3 -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs3 -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
 +					modprobe ntfs >/dev/null 2>&1
 +					mount -t ntfs -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ -a /usr/bin/ntfs-3g ]; then
 +					ntfs-3g -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						ntfs-3g -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				fi
 +				if [ "$mountroot_status" != 0 ]; then
 +						panic "
@@ -189,6 +263,46 @@
 +gracefully shut down and reboot back into Windows. After this you should be
 +able to reboot again and resume the installation.
 +(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			btrfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15 ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15,subvol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
++"
++				fi
++				;;
++			apfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime,vol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
 +"
 +				fi
 +				;;
@@ -221,8 +335,12 @@
 +		[ -z "${KLOOPFSTYPE}" ] && KLOOPFSTYPE="ext4"
 +	fi
 +	[ -e "$realroot" ] || sleep 3
-+	mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
-+	
++	if [ "${KLOOPFSTYPE}" == "btrfs" ]; then
++		mount    ${roflag} -t "${KLOOPFSTYPE}"  -o defaults,autodefrag,compress-force=zstd:15 $realroot $NEWROOT
++	else
++		mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
++	fi
++
 +	### mount /host in initrd to /host of the realrootfs
 +	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
 +	mount --move /host   ${NEWROOT}/host
@@ -248,13 +366,28 @@
 +					modprobe ntfs3 >/dev/null 2>&1
 +					mount -t ntfs3 -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs3 -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
 +					modprobe ntfs >/dev/null 2>&1
 +					mount -t ntfs -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ -a /usr/bin/ntfs-3g ]; then
 +					ntfs-3g -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						ntfs-3g -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				fi
 +				if [ "$mountroot_status" != 0 ]; then
 +						panic "
@@ -288,6 +421,46 @@
 +gracefully shut down and reboot back into Windows. After this you should be
 +able to reboot again and resume the installation.
 +(filesystem = ${FSTYPE}, error code = $mountroot_status)
++"
++				fi
++				;;
++			btrfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15 ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15,subvol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
++"
++				fi
++				;;
++			apfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime,vol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
 +"
 +				fi
 +				;;
@@ -328,13 +501,28 @@
 +					modprobe ntfs3 >/dev/null 2>&1
 +					mount -t ntfs3 -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs3 -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ $(grep ntfs /proc/filesystems | cut -f 2) ] || [ $(find /lib/modules/ -name "ntfs.ko") ]; then
 +					modprobe ntfs >/dev/null 2>&1
 +					mount -t ntfs -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						mount -t ntfs -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				elif [ -a /usr/bin/ntfs-3g ]; then
 +					ntfs-3g -o rw ${HOSTDEV} /host
 +					mountroot_status="$?"
++					if [ "$mountroot_status" != 0 ]; then
++						chkdsk ${HOSTDEV}
++						ntfs-3g -o rw ${HOSTDEV} /host
++						mountroot_status="$?"
++					fi
 +				fi
 +				if [ "$mountroot_status" != 0 ]; then
 +						panic "
@@ -371,6 +559,46 @@
 +"
 +				fi
 +				;;
++			btrfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15 ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o rw,relatime,autodefrag,compress-force=zstd:15,subvol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
++"
++				fi
++				;;
++			apfs)
++				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
++				if [ -z ${ROOTSUBVOL} ]; then
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime ${HOSTDEV} /host
++					mountroot_status="$?"
++				else
++					mount -t ${HOSTFSTYPE} -o readwrite,relatime,vol=${ROOTSUBVOL} ${HOSTDEV} /host
++					mountroot_status="$?"
++				fi
++				if [ "$mountroot_status" != 0 ]; then
++						panic "
++Could not mount the partition ${ROOT}.
++This could also happen if the file system is not clean because of an operating
++system crash, an interrupted boot process, an improper shutdown, or unplugging
++of a removable device without first unmounting or ejecting it.
++(filesystem = ${HOSTFSTYPE}, error code = $mountroot_status)
++(hostdevice = ${HOSTDEV}, subvolume = ${ROOTSUBVOL})
++"
++				fi
++				;;
 +			*)
 +				modprobe ${HOSTFSTYPE} >/dev/null 2>&1
 +				mount -t ${HOSTFSTYPE} -o rw ${HOSTDEV} /host
@@ -387,7 +615,7 @@
 +	### mount /host in initrd to /host of the realrootfs
 +	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
 +	mount --move /host   ${NEWROOT}/host
-+fi	
++fi
  }
  
  local_mount_fs()
