@@ -1,0 +1,18 @@
+--- /usr/share/initramfs-tools/scripts/functions.orig	2024-11-14 21:32:26.000000000 +0800
++++ /usr/share/initramfs-tools/scripts/functions	2024-11-24 20:39:51.353651336 +0800
+@@ -824,6 +824,15 @@
+ 			DEV="$(blkid -l -t "$DEV" -o device)" || return 1
+ 		fi
+ 		;;
++###DO#NOT#DELETE#THIS#MARKER###
++	HIDDENPART=*)
++		local OFFSET=$(echo ${DEV#*=} | cut -d+ -f2)
++		local SIZELIMIT=$(echo ${DEV#*=} | cut -d+ -f3)
++		local DISK=$(lsblk -o NAME,PATH,PTUUID | grep $(echo ${DEV#*=} | cut -d+ -f1) | grep '^[a-z]' | awk '{print $2}')
++		losetup -D
++		DEV="$(losetup -f)"
++		losetup --offset $OFFSET --sizelimit $SIZELIMIT $DEV $DISK
++		;;
+ 	esac
+ 	[ -e "$DEV" ] && echo "$DEV"
+ }
