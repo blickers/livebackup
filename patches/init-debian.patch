@@ -1,6 +1,6 @@
---- /usr/share/initramfs-tools/init.orig	2021-01-15 02:04:11.000000000 +0800
-+++ /usr/share/initramfs-tools/init	2021-12-25 17:35:52.002378204 +0800
-@@ -68,7 +68,22 @@
+--- /usr/share/initramfs-tools/init.orig	2024-08-23 03:30:14.000000000 +0800
++++ /usr/share/initramfs-tools/init	2024-11-24 20:32:52.094638400 +0800
+@@ -75,7 +75,23 @@
  export fastboot=n
  export forcefsck=n
  export fsckfix=
@@ -16,6 +16,7 @@
 +export LOWERDIR=
 +export WORKDIR=
 +export QEMUNBD=
++export ROOTSUBVOL=
 +
 +# mdadm needs hostname to be set. This has to be done before the udev rules are called!
 +if [ -f "/etc/hostname" ]; then
@@ -24,7 +25,17 @@
  
  # Bring in the main config
  . /conf/initramfs.conf
-@@ -104,6 +119,26 @@
+@@ -100,6 +116,9 @@
+ 	rootflags=*)
+ 		ROOTFLAGS="-o ${x#rootflags=}"
+ 		;;
++	rootsubvol=*)
++		ROOTSUBVOL="${x#rootsubvol=}"
++		;;
+ 	rootfstype=*)
+ 		ROOTFSTYPE="${x#rootfstype=}"
+ 		;;
+@@ -111,6 +130,26 @@
  			;;
  		esac
  		;;
@@ -51,7 +62,7 @@
  	nfsroot=*)
  		# shellcheck disable=SC2034
  		NFSROOT="${x#nfsroot=}"
-@@ -184,6 +219,36 @@
+@@ -191,6 +230,36 @@
  	fsck.repair=no)
  		fsckfix=n
  		;;
@@ -88,29 +99,30 @@
  	esac
  done
  
-@@ -198,7 +263,7 @@
+@@ -205,7 +274,7 @@
  	resume=${RESUME:-}
  fi
  
 -mount -t tmpfs -o "nodev,noexec,nosuid,size=${RUNSIZE:-10%},mode=0755" tmpfs /run
-+mount -t tmpfs -o "nodev,noexec,size=50%,mode=0755" tmpfs /run
++mount -t tmpfs -o "nodev,noexec,size=${RUNSIZE:-50%},mode=0755" tmpfs /run
  mkdir -m 0700 /run/initramfs
  
  if [ -n "$log_output" ]; then
-@@ -314,6 +379,16 @@
+@@ -321,6 +390,17 @@
  unset forcefsck
  unset fsckfix
  unset starttime
-+unset KLOOP=
-+unset KROOT=
-+unset KLVM=
-+unset HOSTFSTYPE=
-+unset KLOOPFSTYPE=
-+unset SQUSHFS=
-+unset UPPERDIR=
-+unset LOWERDIR=
-+unset WORKDIR=
-+unset QEMUNBD=
++unset KLOOP
++unset KROOT
++unset KLVM
++unset HOSTFSTYPE
++unset KLOOPFSTYPE
++unset SQUSHFS
++unset UPPERDIR
++unset LOWERDIR
++unset WORKDIR
++unset QEMUNBD
++unset ROOTSUBVOL
  
  # Move virtual filesystems over to the real filesystem
  mount -n -o move /sys ${rootmnt}/sys
