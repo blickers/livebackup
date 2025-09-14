@@ -1,23 +1,31 @@
 --- /usr/share/initramfs-tools/scripts/local.orig	2024-08-23 02:38:38.000000000 +0800
-+++ /usr/share/initramfs-tools/scripts/local	2024-11-24 13:12:47.754139500 +0800
-@@ -158,6 +158,9 @@
- 	fi
++++ /usr/share/initramfs-tools/scripts/local	2025-03-20 14:11:00.532000269 +0800
+@@ -159,6 +159,9 @@
  
  	local_premount
-+	
+ 
 +###DO#NOT#DELETE#THIS#MARKER###
 +if [ -z "$KLOOP" ] && [ -z "$SQUASHFS" ] && [ -z "$UPPERDIR" ] && [ -z "$QEMUNBD" ] ; then
- 
++
  	if [ "${readonly?}" = "y" ]; then
  		roflag=-r
-@@ -169,9 +172,659 @@
+ 	else
+@@ -169,9 +172,668 @@
  
  	# Mount root
  	# shellcheck disable=SC2086
 -	if ! mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"; then
 -		panic "Failed to mount ${ROOT} as root file system."
-+	mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
-+	mountroot_status="$?"
++	if [ "${FSTYPE}" = "squashfs" ] && [ -z "$LOOP" ]; then
++		modprobe overlay
++		mkdir -p /run/lowerdir /run/upperdir /run/workdir
++		mount ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" /run/lowerdir
++		mount -t overlay overlay -o lowerdir=/run/lowerdir,upperdir=/run/upperdir,workdir=/run/workdir "${rootmnt?}"
++	else
++		mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
++		mountroot_status="$?"
++	fi
++
 +	if [ "$LOOP" ]; then
 +		if [ "$mountroot_status" != 0 ]; then
 +			if [ "${FSTYPE}" = ntfs ] || [ "${FSTYPE}" = vfat ]
@@ -224,13 +232,13 @@
 +	if [ -z "${KLOOPFSTYPE}" ]; then
 +		KLOOPFSTYPE="$(blkid -s TYPE -o value "$realroot")"
 +		[ -z "${KLOOPFSTYPE}" ] && KLOOPFSTYPE="ext4"
-+	fi
+ 	fi
 +	[ -e "$realroot" ] || sleep 3
 +	if [ "${KLOOPFSTYPE}" == "btrfs" ]; then
 +		mount    ${roflag} -t "${KLOOPFSTYPE}"  -o defaults,autodefrag,compress-force=zstd:15 $realroot $NEWROOT
 +	else
 +		mount    ${roflag} -t "${KLOOPFSTYPE}"  $realroot $NEWROOT
- 	fi
++	fi
 +	
 +	### mount /host in initrd to /host of the realrootfs
 +	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
@@ -669,6 +677,7 @@
 +	[ -d  ${NEWROOT}/host ] || mkdir -p ${NEWROOT}/host 
 +	mount --move /host   ${NEWROOT}/host
 +fi
++
  }
  
  local_mount_fs()
