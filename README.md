@@ -14,7 +14,7 @@ The SquashFS backup can be booted directly via GNU GRUB. Here's a typical GRUB c
 	probe -u --set=SFSUUID ${SFSROOT}
 	loopback loop (${SFSROOT})/$file
 	set root=${SFSROOT}
-	linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+	linux (loop)/boot/vmlinuz root=UUID=${SFSUUID} squashfs=$file rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
 	initrd (loop)/boot/initrd.img
  }
 ```
@@ -46,8 +46,8 @@ Here is an example of a grub.cfg configuration for booting from a VHD file:
 	set root=${SFSROOT}
 	probe -u --set=SFSUUID ${SFSROOT}
 	loopback loop (${SFSROOT})/$file
-	linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
-#or: linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} qemunbd=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+	linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
+#or: linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} qemunbd=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 initramfs.runsize=50%
 	initrd (loop,msdos1)/boot/initrd.img
  }
 ```   
