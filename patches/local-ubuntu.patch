@@ -1,16 +1,35 @@
---- /usr/share/initramfs-tools/scripts/local.orig	2024-11-14 21:32:26.000000000 +0800
-+++ /usr/share/initramfs-tools/scripts/local	2024-11-24 20:23:33.587421369 +0800
-@@ -204,6 +204,9 @@
- 	fi
+--- /usr/share/initramfs-tools/scripts/local.orig	2025-08-13 20:33:32.000000000 +0800
++++ /usr/share/initramfs-tools/scripts/local	2025-09-14 09:57:16.544001151 +0800
+@@ -205,6 +205,9 @@
  
  	local_premount
-+	
+ 
 +###DO#NOT#DELETE#THIS#MARKER###
 +if [ -z "$KLOOP" ] && [ -z "$SQUASHFS" ] && [ -z "$UPPERDIR" ] && [ -z "$QEMUNBD" ] ; then
- 
++
  	if [ "${readonly?}" = "y" ] && \
  	   [ -z "$LOOP" ]; then
-@@ -267,6 +270,608 @@
+ 		roflag=-r
+@@ -216,8 +219,16 @@
+ 
+ 	# Mount root
+ 	# shellcheck disable=SC2086
+-	mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
+-	mountroot_status="$?"
++	if [ "${FSTYPE}" = "squashfs" ] && [ -z "$LOOP" ]; then
++		modprobe overlay
++		mkdir -p /run/lowerdir /run/upperdir /run/workdir
++		mount ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" /run/lowerdir
++		mount -t overlay overlay -o lowerdir=/run/lowerdir,upperdir=/run/upperdir,workdir=/run/workdir "${r>
++	else
++		mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
++		mountroot_status="$?"
++	fi
++
+ 	if [ "$LOOP" ]; then
+ 		if [ "$mountroot_status" != 0 ]; then
+ 			if [ "${FSTYPE}" = ntfs ] || [ "${FSTYPE}" = vfat ]
+@@ -266,6 +277,608 @@
  			mount -o move /host "$rootmnt/host"
  		fi
  	fi
