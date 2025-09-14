@@ -172,8 +172,8 @@ rebuildtree(){ # Remounting the linux directories effectively excludes removable
 	ln -s usr/bin bin
 	ln -s usr/sbin sbin
 	ln -s usr/lib lib
-	ln -s usr/lib32 lib32
-	ln -s usr/lib64 lib64
+	[ -d "/usr/lib32" ] && [ -L "/lib32" ] && ln -s usr/lib32 lib32
+	[ -d "/usr/lib64" ] && [ -L "/lib64" ] && ln -s usr/lib64 lib64
 	ln -s home Users
 	ln -s media Volumes
 	cd -
@@ -203,8 +203,9 @@ rebuildtree(){ # Remounting the linux directories effectively excludes removable
 	[ -L "/$1/etc/fstab" ] && rm -rf "/$1/var/lib/bluetooth" && mkdir "/$1/var/lib/bluetooth" && chmod 700 "/$1/var/lib/bluetooth"
 	local HIGHEST_KERNEL_VERSION=$(ls /boot | grep -P 'vmlinuz-\d+\.\d+\.\d+' | sort -V | tail -n 1 | cut -d '-' -f 2-)
 	rm -f /$1/boot/vmlinuz /$1/boot/initrd.img /$1/boot/*.old
-	ln -s /boot/vmlinuz-$HIGHEST_KERNEL_VERSION /$1/boot/vmlinuz
-	ln -s /boot/initrd.img-$HIGHEST_KERNEL_VERSION /$1/boot/initrd.img
+	ln -s vmlinuz-$HIGHEST_KERNEL_VERSION /$1/boot/vmlinuz
+	ln -s initrd.img-$HIGHEST_KERNEL_VERSION /$1/boot/initrd.img
+	rm -rf /$1/boot/.uuid; mkdir /$1/boot/.uuid; touch /$1/boot/.uuid/$(cat /proc/sys/kernel/random/uuid) > /dev/null 2>&1
 }
 
 destroytree(){
@@ -440,6 +441,7 @@ dobackup(){
 		echo "${i#/}"/.xwechat >> $exclude
 		echo "${i#/}"/.var >> $exclude
 		echo "${i#/}"/.kube >> $exclude
+		echo "${i#/}/Sunlogin Files" >> $exclude
 		find "$i/.docker/desktop/log/" -type f -name "*.log*" 2>/dev/null | sed -e 's/^\///g' >> $exclude
 		find "$i/.docker/desktop/tasks/" -type f 2>/dev/null | sed -e 's/^\///g' >> $exclude
 		find "$i/.config/VirtualBox/" -type f -regex ".*\(\-prev\|\.log.*\)$" 2>/dev/null | sed -e 's/^\///g' >> $exclude
@@ -485,8 +487,8 @@ dobackup(){
 	oemdeploy $bindingdir
 	stime=`date`
 	mkdir -p "/$backupdir"
-#	SQUASHFSOPTS="-no-recovery -always-use-fragments -b 1M -noappend"
-	SQUASHFSOPTS="-comp zstd -Xcompression-level 22 -no-recovery -always-use-fragments -b 1M -noappend"
+	SQUASHFSOPTS="-no-recovery -always-use-fragments -b 1M -noappend"
+#	SQUASHFSOPTS="-comp zstd -Xcompression-level 22 -no-recovery -always-use-fragments -b 1M -noappend"
 #	SQUASHFSOPTS="-comp xz -no-recovery -always-use-fragments -b 1M -noappend"
 	mksquashfs /$bindingdir "/$backupdir/${OEM}backup${today}.squashfs" $SQUASHFSOPTS -ef $exclude
 	destroytree $bindingdir $deploy_upperdir $deploy_workdir
@@ -578,7 +580,7 @@ sudo $mypath -h                   View help."
 }
 
 today=`date +%d.%m.%Y`
-version="V3.9, Nov 24, 2024"
+version="V3.9.2, Aug 30, 2025"
 OPTION=$1
 OEM=$2
 BACKUPDIR=$3
