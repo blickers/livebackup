@@ -1,5 +1,5 @@
 --- /usr/share/initramfs-tools/scripts/local.orig	2023-01-17 10:22:57.000000000 +0800
-+++ /usr/share/initramfs-tools/scripts/local	2024-11-24 21:02:57.018720152 +0800
++++ /usr/share/initramfs-tools/scripts/local	2025-09-14 10:06:50.788001425 +0800
 @@ -194,6 +194,9 @@
  	fi
  
@@ -10,14 +10,33 @@
  
      if [ "${readonly?}" = "y" ] && \
         [ -z "$LOOP" ]; then
-@@ -258,8 +261,608 @@
+@@ -206,8 +209,16 @@
+ 
+ 	# Mount root
+ 	# shellcheck disable=SC2086
+-	mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
+-	mountroot_status="$?"
++	if [ "${FSTYPE}" = "squashfs" ] && [ -z "$LOOP" ]; then
++		modprobe overlay
++		mkdir -p /run/lowerdir /run/upperdir /run/workdir
++		mount ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" /run/lowerdir
++		mount -t overlay overlay -o lowerdir=/run/lowerdir,upperdir=/run/upperdir,workdir=/run/workdir "${rootmnt?}"
++	else
++		mount ${roflag} ${FSTYPE:+-t "${FSTYPE}"} ${ROOTFLAGS} "${ROOT}" "${rootmnt?}"
++		mountroot_status="$?"
++	fi
++	
+ 	if [ "$LOOP" ]; then
+ 		if [ "$mountroot_status" != 0 ]; then
+ 			if [ "${FSTYPE}" = ntfs ] || [ "${FSTYPE}" = vfat ]
+@@ -258,8 +269,608 @@
  		if [ -d "$rootmnt/host" ]; then
  			mount -o move /host "$rootmnt/host"
  		fi
 +	fi
 +fi
 +if [ -n "$KLOOP" ]; then
- 
++
 +	### reset the value of the root variable 
 +	HOSTDEV="${ROOT}"
 +	NEWROOT="${rootmnt}"
@@ -152,7 +171,7 @@
 +		kpartx -av /host${KLOOP}
 +		[ -e "$realroot" ] || sleep 3
 +	fi
-+
+ 
 +	### probe lvm on vhd-file
 +	if [ -n "$KLVM" ];  then
 +		modprobe dm-mod
