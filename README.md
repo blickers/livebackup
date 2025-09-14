@@ -1,9 +1,8 @@
 # livebackup
-Simply create a bootable squashfs live systems from your running Linux
 
-This is a bash script designed to create a bootable squashfs file from either an installed Linux system or the live system itself. It's an adaptation of the "Live Ubuntu Backup" script originally authored by billbear@gmail.com. I've simplified its code, concentrating solely on live system backups and ensuring it functions for more than just Ubuntu; it supports any Debian-based Linux distribution.
+This Bash script creates a bootable SquashFS live system from your currently running Linux installation. Adapted from the original 'Live Ubuntu Backup' script by billbear@gmail.com, it has been streamlined to focus exclusively on live system backups. Unlike the original, it supports not just Ubuntu but any Debian-based Linux distribution.
 
-The squashfs backup file can be booted directly using GNU grub:
+The SquashFS backup can be booted directly via GNU GRUB. Here's a typical GRUB configuration example for booting from a backup.squashfs file:
 
 ```
  menuentry "GNU/Linux in SQUASHFS IMAGE (Live CD mode, read only)" {
@@ -19,6 +18,8 @@ The squashfs backup file can be booted directly using GNU grub:
 	initrd (loop)/boot/initrd.img
  }
 ```
+In this example, GRUB locates backup.squashfs in a partition's root directory and loads the kernel from within the backup.squashfs file. Since GNU GRUB does not support zstd-compressed squashfs files, if you opt for zstd compression to reduce the squashfs file size, you must extract vmlinuz and initrd.img from the backup and place them in a location accessible to GNU GRUB.
+
 Alternatively, you can manually restore the squashfs backup to a physical hard drive partition or a disk image file:
 
  MOUNT YOUR HD PARTITION OR DISK IMAGE FILE (eg. /VirtualBox/linux.vhd ) TO /mnt,
@@ -46,6 +47,7 @@ Here is an example of a grub.cfg configuration for booting from a VHD file:
 	probe -u --set=SFSUUID ${SFSROOT}
 	loopback loop (${SFSROOT})/$file
 	linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} kloop=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
+#or: linux (loop,msdos1)/boot/vmlinuz root=UUID=${SFSUUID} qemunbd=$file kroot=/dev/mapper/loop0p1 rw quiet splash locale=en_US.UTF-8 acpi_backlight=vendor
 	initrd (loop,msdos1)/boot/initrd.img
  }
 ```   
