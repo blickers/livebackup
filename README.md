@@ -1,6 +1,6 @@
 # livebackup
 
-This Bash script creates a bootable SquashFS live system from your currently running Linux installation. Adapted from the original 'Live Ubuntu Backup' script by billbear@gmail.com, it has been streamlined to focus exclusively on live system backups. Unlike the original, it supports not just Ubuntu but any Debian-based Linux distribution.
+This Bash script creates a bootable SquashFS live system from your currently running Linux installation. You can "hot backup" a live system to save your changes by creating a new live backup. Adapted from the original 'Live Ubuntu Backup' script by billbear@gmail.com, it has been streamlined to focus exclusively on live system backups. Unlike the original, it supports not just Ubuntu but any Debian-based Linux distribution.
 
 The SquashFS backup can be booted directly via GNU GRUB. Here's a typical GRUB configuration example for booting from a backup.squashfs file:
 
